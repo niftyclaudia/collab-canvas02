@@ -1,4 +1,4 @@
-import { ref, set, onValue, off, remove } from 'firebase/database';
+import { ref, set, onValue, remove } from 'firebase/database';
 import { database } from '../firebase';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 
@@ -95,15 +95,22 @@ class CursorService {
 
     // Set up the listener
     console.log('🎯 CURSOR: Adding onValue listener to RTDB');
-    onValue(cursorsRef, handleCursorUpdates);
+    console.log('🎯 CURSOR: Listener path:', cursorsRef.toString());
     
-    // Store reference for cleanup
-    this.listeners[cursorsRef.key || 'cursors'] = cursorsRef;
+    const unsubscribe = onValue(cursorsRef, handleCursorUpdates, (error) => {
+      console.error('❌ CURSOR: Subscription error:', error);
+      console.error('❌ CURSOR: Error details:', JSON.stringify(error, null, 2));
+    });
+    
+    // Store unsubscribe function for cleanup
+    this.listeners[cursorsRef.key || 'cursors'] = unsubscribe;
+    
+    console.log('✅ CURSOR: Listener set up successfully');
 
     // Return cleanup function
     return () => {
       console.log('🎯 CURSOR: Cleaning up cursor subscription');
-      off(cursorsRef, 'value', handleCursorUpdates);
+      unsubscribe();
       delete this.listeners[cursorsRef.key || 'cursors'];
     };
   }
@@ -158,8 +165,11 @@ class CursorService {
    * Clean up all listeners
    */
   cleanup(): void {
-    Object.values(this.listeners).forEach((listenerRef) => {
-      off(listenerRef);
+    // Clean up listeners (they are now unsubscribe functions)
+    Object.values(this.listeners).forEach((unsubscribeFn) => {
+      if (typeof unsubscribeFn === 'function') {
+        unsubscribeFn();
+      }
     });
     this.listeners = {};
     this.presenceHeartbeats = {}; // Clean up heartbeat tracking

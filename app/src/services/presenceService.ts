@@ -1,4 +1,4 @@
-import { ref, set, onValue, off, onDisconnect } from 'firebase/database';
+import { ref, set, onValue, onDisconnect } from 'firebase/database';
 import { database } from '../firebase';
 
 export interface PresenceData {
@@ -120,15 +120,22 @@ class PresenceService {
 
     // Set up the listener
     console.log('🎯 PRESENCE: Adding onValue listener to RTDB');
-    onValue(presenceRef, handlePresenceUpdates);
+    console.log('🎯 PRESENCE: Listener path:', presenceRef.toString());
     
-    // Store reference for cleanup
-    this.listeners[presenceRef.key || 'presence'] = presenceRef;
+    const unsubscribe = onValue(presenceRef, handlePresenceUpdates, (error) => {
+      console.error('❌ PRESENCE: Subscription error:', error);
+      console.error('❌ PRESENCE: Error details:', JSON.stringify(error, null, 2));
+    });
+    
+    // Store unsubscribe function for cleanup
+    this.listeners[presenceRef.key || 'presence'] = unsubscribe;
+    
+    console.log('✅ PRESENCE: Listener set up successfully');
 
     // Return cleanup function
     return () => {
       console.log('🎯 PRESENCE: Cleaning up presence subscription');
-      off(presenceRef, 'value', handlePresenceUpdates);
+      unsubscribe();
       delete this.listeners[presenceRef.key || 'presence'];
     };
   }
@@ -204,9 +211,11 @@ class PresenceService {
    * Clean up all listeners and disconnect handlers
    */
   cleanup(): void {
-    // Clean up listeners
-    Object.values(this.listeners).forEach((listenerRef) => {
-      off(listenerRef);
+    // Clean up listeners (they are now unsubscribe functions)
+    Object.values(this.listeners).forEach((unsubscribeFn) => {
+      if (typeof unsubscribeFn === 'function') {
+        unsubscribeFn();
+      }
     });
     this.listeners = {};
 

@@ -35,11 +35,14 @@ if (import.meta.env.MODE === 'production') {
   setTimeout(async () => {
     try {
       const { ref, get } = await import('firebase/database');
-      const testRef = ref(database, '.info/connected');
+      // Test with a simple path instead of .info/connected
+      const testRef = ref(database, 'test');
       const snapshot = await get(testRef);
-      console.log('🔗 Realtime Database connection test:', snapshot.val() ? 'CONNECTED' : 'DISCONNECTED');
+      console.log('🔗 Realtime Database connection test: SUCCESS - Can read from RTDB');
+      console.log('🔗 Test data:', snapshot.val());
     } catch (error) {
       console.error('❌ Realtime Database connection test failed:', error);
+      console.error('❌ Error details:', JSON.stringify(error, null, 2));
     }
   }, 2000);
 }
