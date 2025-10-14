@@ -30,7 +30,13 @@ dist-ssr
 
 # Firebase
 .firebase/
-firebase-debug.log
-firestore-debug.log
-database-debug.log
-ui-debug.log
+firebase-debug.log*
+firestore-debug.log*
+database-debug.log*
+ui-debug.log*
+
+# Vite
+.vite/
+
+# Temporary documentation files
+PR-*.md
