@@ -2,12 +2,16 @@ import React from 'react';
 import Navbar from './Navbar';
 import ColorToolbar from '../Canvas/ColorToolbar';
 import { CanvasProvider } from '../../contexts/CanvasContext';
+import { PresenceList } from '../Collaboration/PresenceList';
+import { usePresence } from '../../hooks/usePresence';
 
 interface AppShellProps {
   children: React.ReactNode;
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const { onlineUsers, currentUser, totalOnlineCount } = usePresence();
+
   return (
     <CanvasProvider>
       <div className="app-shell">
@@ -15,10 +19,11 @@ export function AppShell({ children }: AppShellProps) {
         <div className="app-body">
           <aside className="sidebar">
             <ColorToolbar />
-            <div className="presence-placeholder">
-              <h4>Users Online</h4>
-              <p>Coming in PR #3</p>
-            </div>
+            <PresenceList 
+              onlineUsers={onlineUsers}
+              currentUser={currentUser}
+              totalOnlineCount={totalOnlineCount}
+            />
           </aside>
           <main className="main-content">
             {children}

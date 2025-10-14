@@ -2,9 +2,14 @@ import { useRef, useCallback, useState, useEffect } from 'react';
 import { Stage, Layer, Rect, Line } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
+import { useCursors } from '../../hooks/useCursors';
+import { CursorLayer } from '../Collaboration/CursorLayer';
 
 export function Canvas() {
   const stageRef = useRef<any>(null);
+  
+  // Cursor tracking hook
+  const { remoteCursors } = useCursors(stageRef);
   const animationFrameRef = useRef<number | null>(null);
   const wheelTimeoutRef = useRef<number | null>(null);
   const accumulatedDeltaRef = useRef(0);
@@ -338,6 +343,7 @@ export function Canvas() {
       <div 
         className="canvas-stage-container"
         style={{
+          position: 'relative',
           touchAction: 'none', // Disable default touch behaviors
           WebkitUserSelect: 'none',
           MozUserSelect: 'none',
@@ -384,6 +390,9 @@ export function Canvas() {
             {/* Shapes will be rendered here in future PRs */}
           </Layer>
         </Stage>
+        
+        {/* Cursor overlay layer */}
+        <CursorLayer cursors={remoteCursors} stageRef={stageRef} />
       </div>
     </div>
   );
