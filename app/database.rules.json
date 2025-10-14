@@ -3,8 +3,8 @@
     "sessions": {
       "main": {
         "users": {
+          ".read": "auth != null",
           "$userId": {
-            ".read": "auth != null",
             ".write": "auth != null && auth.uid == $userId",
             "cursor": {
               ".write": "auth != null && (auth.uid == $userId || !data.exists())"
