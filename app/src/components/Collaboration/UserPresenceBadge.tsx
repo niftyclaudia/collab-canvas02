@@ -1,4 +1,3 @@
-import React from 'react';
 import type { OnlineUser } from '../../hooks/usePresence';
 
 interface UserPresenceBadgeProps {

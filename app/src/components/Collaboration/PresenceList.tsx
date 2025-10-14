@@ -1,4 +1,3 @@
-import React from 'react';
 import { UserPresenceBadge } from './UserPresenceBadge';
 import type { OnlineUser } from '../../hooks/usePresence';
 

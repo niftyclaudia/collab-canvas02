@@ -40,3 +40,4 @@ ui-debug.log*
 
 # Temporary documentation files
 PR-*.md
+.vercel

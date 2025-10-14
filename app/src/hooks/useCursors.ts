@@ -16,7 +16,7 @@ export interface RemoteCursor {
 export function useCursors(stageRef: React.RefObject<any>) {
   const { user } = useAuth();
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
-  const throttledUpdateRef = useRef<((x: number, y: number) => void) | null>(null);
+  const throttledUpdateRef = useRef<((x: number, y: number) => void) & { cancel(): void } | null>(null);
   const isTrackingRef = useRef(false);
 
   // Create throttled update function
