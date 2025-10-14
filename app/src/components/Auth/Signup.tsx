@@ -73,7 +73,7 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
       <div className="auth-card">
         <div className="auth-header">
           <h1>Join CollabCanvas</h1>
-          <p>Create your account to start collaborating</p>
+          <p>Create your account and start building together</p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">

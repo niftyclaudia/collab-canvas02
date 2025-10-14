@@ -69,8 +69,8 @@ export function Login({ onSwitchToSignup }: LoginProps) {
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
-          <h1>Welcome Back</h1>
-          <p>Log in to continue collaborating</p>
+          <h1>Welcome to CollabCanvas</h1>
+          <p>Your space to create together — log in to continue</p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
