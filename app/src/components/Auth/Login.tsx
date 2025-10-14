@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../hooks/useToast';
 
 interface LoginProps {
   onSwitchToSignup: () => void;
@@ -7,11 +8,11 @@ interface LoginProps {
 
 export function Login({ onSwitchToSignup }: LoginProps) {
   const { login, loading } = useAuth();
+  const { showError, showSuccess } = useToast();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
-  const [error, setError] = useState<string | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -19,24 +20,20 @@ export function Login({ onSwitchToSignup }: LoginProps) {
       ...prev,
       [name]: value,
     }));
-    // Clear error when user starts typing
-    if (error) {
-      setError(null);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
 
     // Basic validation
     if (!formData.email || !formData.password) {
-      setError('Email and password are required');
+      showError('Email and password are required');
       return;
     }
 
     try {
       await login(formData.email, formData.password);
+      showSuccess('Welcome back! You have been logged in successfully.');
       // Success - user will be redirected by the route guard in App.tsx
     } catch (error: any) {
       console.error('Login error:', error);
@@ -63,7 +60,8 @@ export function Login({ onSwitchToSignup }: LoginProps) {
             errorMessage = error.message || errorMessage;
         }
       }
-      setError(errorMessage);
+      
+      showError(errorMessage);
     }
   };
 
@@ -76,11 +74,6 @@ export function Login({ onSwitchToSignup }: LoginProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
 
           <div className="form-group">
             <label htmlFor="email">Email</label>

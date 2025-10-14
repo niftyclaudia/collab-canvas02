@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../hooks/useToast';
 
 interface SignupProps {
   onSwitchToLogin: () => void;
@@ -7,12 +8,12 @@ interface SignupProps {
 
 export function Signup({ onSwitchToLogin }: SignupProps) {
   const { signup, loading } = useAuth();
+  const { showError, showSuccess } = useToast();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     username: '',
   });
-  const [error, setError] = useState<string | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -20,29 +21,25 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
       ...prev,
       [name]: value,
     }));
-    // Clear error when user starts typing
-    if (error) {
-      setError(null);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
 
     // Basic validation
     if (!formData.email || !formData.password || !formData.username) {
-      setError('All fields are required');
+      showError('All fields are required');
       return;
     }
 
     if (formData.username.trim().length < 2) {
-      setError('Username must be at least 2 characters long');
+      showError('Username must be at least 2 characters long');
       return;
     }
 
     try {
       await signup(formData.email, formData.password, formData.username);
+      showSuccess(`Welcome to CollabCanvas, ${formData.username}! Your account has been created successfully.`);
       // Success - user will be redirected by the route guard in App.tsx
     } catch (error: any) {
       console.error('Signup error:', error);
@@ -67,7 +64,7 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
             errorMessage = error.message || errorMessage;
         }
       }
-      setError(errorMessage);
+      showError(errorMessage);
     }
   };
 
@@ -80,11 +77,6 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
 
           <div className="form-group">
             <label htmlFor="email">Email</label>

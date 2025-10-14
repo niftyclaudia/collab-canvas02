@@ -1,8 +1,10 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import AuthComponent from './components/Auth/AuthProvider';
 import AppShell from './components/Layout/AppShell';
 import Canvas from './components/Canvas/Canvas';
+import ToastContainer from './components/UI/ToastContainer';
 import './App.css'
 
 // Main app component with route guard logic
@@ -35,7 +37,10 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+        <ToastContainer />
+      </ToastProvider>
     </AuthProvider>
   );
 }
