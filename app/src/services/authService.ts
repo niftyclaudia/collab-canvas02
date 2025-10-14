@@ -82,8 +82,25 @@ class AuthService {
       const userDoc = await getDoc(userDocRef);
 
       if (!userDoc.exists()) {
-        console.error('❌ User document not found in Firestore for uid:', firebaseUser.uid);
-        throw new Error('User document not found in database');
+        console.warn('⚠️ User document not found, creating it now for uid:', firebaseUser.uid);
+        
+        // Create missing user document (this can happen if user was created in emulator)
+        const userData: Omit<User, 'uid'> = {
+          email: firebaseUser.email!,
+          username: firebaseUser.email!.split('@')[0], // Use email prefix as username
+          cursorColor: getRandomCursorColor(),
+          createdAt: serverTimestamp() as Timestamp,
+        };
+
+        const userDocRef = doc(firestore, 'users', firebaseUser.uid);
+        await setDoc(userDocRef, userData);
+        
+        console.log('✅ Created missing user document for:', firebaseUser.uid);
+        
+        return {
+          uid: firebaseUser.uid,
+          ...userData,
+        } as User;
       }
 
       const userData = userDoc.data() as Omit<User, 'uid'>;
