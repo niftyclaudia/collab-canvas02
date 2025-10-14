@@ -4,6 +4,7 @@ import {
   setDoc, 
   updateDoc, 
   getDocs, 
+  getDoc,
   onSnapshot,
   serverTimestamp,
   Timestamp,
@@ -194,6 +195,101 @@ class CanvasService {
       width > 0 &&
       height > 0
     );
+  }
+
+  /**
+   * Attempt to lock a shape for editing
+   * Returns true if lock acquired, false if shape is already locked by another user
+   */
+  async lockShape(shapeId: string, userId: string): Promise<boolean> {
+    try {
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        console.error('❌ Shape not found for locking:', shapeId);
+        return false;
+      }
+
+      const shapeData = shapeDoc.data() as Shape;
+      const now = Date.now();
+      
+      // Check if shape is already locked by another user
+      if (shapeData.lockedBy && shapeData.lockedBy !== userId) {
+        // Check if lock is still valid (less than 5 seconds old)
+        const lockAge = now - (shapeData.lockedAt?.toMillis() || 0);
+        
+        if (lockAge < 5000) {
+          console.log('🔒 Shape is locked by another user:', shapeData.lockedBy);
+          return false; // Lock acquisition failed
+        }
+      }
+      
+      // Acquire or refresh the lock
+      await updateDoc(shapeDocRef, {
+        lockedBy: userId,
+        lockedAt: serverTimestamp() as Timestamp,
+        updatedAt: serverTimestamp() as Timestamp,
+      });
+
+      console.log('✅ Shape locked successfully:', shapeId, 'by:', userId);
+      return true;
+    } catch (error) {
+      console.error('❌ Error locking shape:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Release lock on a shape
+   */
+  async unlockShape(shapeId: string): Promise<void> {
+    try {
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      
+      await updateDoc(shapeDocRef, {
+        lockedBy: null,
+        lockedAt: null,
+        updatedAt: serverTimestamp() as Timestamp,
+      });
+
+      console.log('✅ Shape unlocked successfully:', shapeId);
+    } catch (error) {
+      console.error('❌ Error unlocking shape:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if a shape lock has expired (client-side check)
+   */
+  isLockExpired(lockedAt: Timestamp | null | undefined): boolean {
+    if (!lockedAt) return true;
+    
+    const now = Date.now();
+    const lockAge = now - lockedAt.toMillis();
+    
+    return lockAge > 5000; // 5 second timeout
+  }
+
+  /**
+   * Get the display name for a locked shape owner
+   */
+  async getUserDisplayName(userId: string): Promise<string> {
+    try {
+      const userDocRef = doc(firestore, 'users', userId);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        return userData.username || userData.email || 'Unknown User';
+      }
+      
+      return 'Unknown User';
+    } catch (error) {
+      console.error('❌ Error fetching user display name:', error);
+      return 'Unknown User';
+    }
   }
 
   /**

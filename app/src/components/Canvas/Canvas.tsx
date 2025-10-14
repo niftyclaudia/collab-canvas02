@@ -1,10 +1,12 @@
-import { useRef, useCallback, useState, useEffect } from 'react';
-import { Stage, Layer, Rect, Line } from 'react-konva';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
+import { Stage, Layer, Rect, Line, Text } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
+import type Konva from 'konva';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
 import { useCursors } from '../../hooks/useCursors';
 import { useCanvas } from '../../hooks/useCanvas';
 import { CursorLayer } from '../Collaboration/CursorLayer';
+import type { Shape } from '../../services/canvasService';
 
 export function Canvas() {
   const stageRef = useRef<any>(null);
@@ -14,11 +16,16 @@ export function Canvas() {
     mode,
     shapes, 
     selectedColor, 
+    selectedShapeId,
     drawingState, 
     startDrawing, 
     updateDrawing, 
     finishDrawing, 
-    cancelDrawing 
+    cancelDrawing,
+    lockShape,
+    unlockShape,
+    getShapeLockStatus,
+    updateShape
   } = useCanvas();
   
   // Cursor tracking hook
@@ -351,38 +358,78 @@ export function Canvas() {
     stage.batchDraw();
   }, []);
 
-  // Shape drawing event handlers
-  const handleMouseDown = useCallback((e: KonvaEventObject<MouseEvent>) => {
-    // Only handle drawing in create mode
-    if (mode !== 'create') return;
+  // Shape click handlers
+  const handleShapeClick = useCallback(async (e: KonvaEventObject<MouseEvent>, shape: Shape) => {
+    e.cancelBubble = true; // Prevent event from bubbling to stage
     
-    // Only start drawing if we clicked on the stage background (not on existing shapes)
-    // Allow clicks on Stage, background Rect, or grid Lines
-    const targetClass = e.target.getClassName();
-    const isBackground = targetClass === 'Stage' || targetClass === 'Rect' || targetClass === 'Line';
-    
-    if (!isBackground) return;
-    
-    const stage = stageRef.current;
-    if (!stage) return;
-    
-    const pos = stage.getPointerPosition();
-    if (!pos) return;
-    
-    // Convert screen coordinates to canvas coordinates
-    const canvasPos = {
-      x: (pos.x - stage.x()) / stage.scaleX(),
-      y: (pos.y - stage.y()) / stage.scaleY(),
+    try {
+      await lockShape(shape.id);
+    } catch (error) {
+      console.error('Failed to lock shape:', error);
+    }
+  }, [lockShape]);
+  
+  const handleShapeDragEnd = useCallback(async (e: KonvaEventObject<DragEvent>, shape: Shape) => {
+    const node = e.target as Konva.Rect;
+    const newPosition = {
+      x: node.x(),
+      y: node.y(),
     };
     
-    // Check if position is within canvas bounds
-    if (canvasPos.x < 0 || canvasPos.y < 0 || 
-        canvasPos.x > CANVAS_WIDTH || canvasPos.y > CANVAS_HEIGHT) {
-      return;
+    try {
+      // Update shape position in Firestore
+      await updateShape(shape.id, newPosition);
+      
+      // Release lock after successful drag
+      await unlockShape(shape.id);
+    } catch (error) {
+      console.error('Failed to update shape position:', error);
+      // Reset position on error
+      node.x(shape.x);
+      node.y(shape.y);
     }
+  }, [updateShape, unlockShape]);
+
+  // Background click handler (deselect + drawing)
+  const handleStageClick = useCallback((e: KonvaEventObject<MouseEvent>) => {
+    // Check if we clicked on the stage background
+    const targetClass = e.target.getClassName();
+    const isBackground = targetClass === 'Stage' || 
+                        (targetClass === 'Rect' && e.target.id() === 'canvas-background') ||
+                        targetClass === 'Line';
     
-    startDrawing(canvasPos.x, canvasPos.y);
-  }, [mode, startDrawing]);
+    if (isBackground) {
+      // Deselect current shape if any
+      if (selectedShapeId) {
+        unlockShape(selectedShapeId).catch(error => {
+          console.error('Failed to unlock shape on deselect:', error);
+        });
+      }
+      
+      // Handle shape creation in create mode
+      if (mode === 'create') {
+        const stage = stageRef.current;
+        if (!stage) return;
+        
+        const pos = stage.getPointerPosition();
+        if (!pos) return;
+        
+        // Convert screen coordinates to canvas coordinates
+        const canvasPos = {
+          x: (pos.x - stage.x()) / stage.scaleX(),
+          y: (pos.y - stage.y()) / stage.scaleY(),
+        };
+        
+        // Check if position is within canvas bounds
+        if (canvasPos.x < 0 || canvasPos.y < 0 || 
+            canvasPos.x > CANVAS_WIDTH || canvasPos.y > CANVAS_HEIGHT) {
+          return;
+        }
+        
+        startDrawing(canvasPos.x, canvasPos.y);
+      }
+    }
+  }, [mode, selectedShapeId, startDrawing, unlockShape]);
 
   const handleMouseMove = useCallback((_e: KonvaEventObject<MouseEvent>) => {
     if (!drawingState.isDrawing) return;
@@ -439,13 +486,14 @@ export function Canvas() {
           draggable={!isGesturing && !drawingState.isDrawing && mode === 'pan'}
           onWheel={handleWheel}
           onDragEnd={handleDragEnd}
-          onMouseDown={handleMouseDown}
+          onMouseDown={handleStageClick}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
         >
           <Layer>
             {/* Canvas background - visual indicator of canvas bounds */}
             <Rect
+              id="canvas-background"
               x={0}
               y={0}
               width={CANVAS_WIDTH}
@@ -472,18 +520,55 @@ export function Canvas() {
               />
             ))}
             {/* Render existing shapes from Firestore */}
-            {shapes.map((shape) => (
-              <Rect
-                key={shape.id}
-                x={shape.x}
-                y={shape.y}
-                width={shape.width}
-                height={shape.height}
-                fill={shape.color}
-                stroke={shape.color}
-                strokeWidth={2}
-              />
-            ))}
+            {shapes.map((shape) => {
+              const lockStatus = getShapeLockStatus(shape);
+              
+              // Visual styling based on lock status
+              let strokeColor = shape.color;
+              let strokeWidth = 2;
+              let opacity = 1;
+              let isDraggable = false;
+              
+              if (lockStatus === 'locked-by-me') {
+                strokeColor = '#10b981'; // Green border
+                strokeWidth = 3;
+                isDraggable = true;
+              } else if (lockStatus === 'locked-by-other') {
+                strokeColor = '#ef4444'; // Red border
+                strokeWidth = 3;
+                opacity = 0.5;
+              }
+              
+              return (
+                <React.Fragment key={shape.id}>
+                  <Rect
+                    x={shape.x}
+                    y={shape.y}
+                    width={shape.width}
+                    height={shape.height}
+                    fill={shape.color}
+                    stroke={strokeColor}
+                    strokeWidth={strokeWidth}
+                    opacity={opacity}
+                    draggable={isDraggable}
+                    onClick={(e) => handleShapeClick(e, shape)}
+                    onDragEnd={(e) => handleShapeDragEnd(e, shape)}
+                    listening={lockStatus !== 'locked-by-other'} // Disable interaction if locked by other
+                  />
+                  
+                  {/* Lock icon for shapes locked by others */}
+                  {lockStatus === 'locked-by-other' && (
+                    <Text
+                      x={shape.x + shape.width - 20}
+                      y={shape.y + 5}
+                      text="🔒"
+                      fontSize={16}
+                      listening={false} // Icon shouldn't capture events
+                    />
+                  )}
+                </React.Fragment>
+              );
+            })}
             
             {/* Render preview rectangle during drawing */}
             {drawingState.isDrawing && drawingState.previewShape && (
