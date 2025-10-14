@@ -272,11 +272,18 @@
 .canvas-stage-container {
   height: 100%;
   width: 100%;
+}
+
+.canvas-stage-container.mode-pan {
   cursor: grab;
 }
 
-.canvas-stage-container:active {
+.canvas-stage-container.mode-pan:active {
   cursor: grabbing;
+}
+
+.canvas-stage-container.mode-create {
+  cursor: crosshair;
 }
 
 /* Color toolbar styles */
@@ -337,6 +344,54 @@
 .checkmark {
   color: white;
   text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+/* Mode buttons styles */
+.mode-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.mode-button {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.mode-button:hover {
+  border-color: #d1d5db;
+  background: #f9fafb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.mode-button:active {
+  transform: translateY(0);
+}
+
+.mode-button.active {
+  border-color: #3b82f6;
+  background: #3b82f6;
+  color: white;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.mode-button.active:hover {
+  background: #2563eb;
+  border-color: #2563eb;
 }
 
 /* Presence placeholder */

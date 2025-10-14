@@ -1,5 +1,6 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { CanvasProvider } from './contexts/CanvasContext';
 import { ToastProvider } from './contexts/ToastContext';
 import AuthComponent from './components/Auth/AuthProvider';
 import AppShell from './components/Layout/AppShell';
@@ -28,9 +29,11 @@ function AppContent() {
 
   // Show main app if authenticated
   return (
-    <AppShell>
-      <Canvas />
-    </AppShell>
+    <CanvasProvider>
+      <AppShell>
+        <Canvas />
+      </AppShell>
+    </CanvasProvider>
   );
 }
 

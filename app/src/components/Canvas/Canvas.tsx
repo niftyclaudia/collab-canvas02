@@ -3,10 +3,23 @@ import { Stage, Layer, Rect, Line } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
 import { useCursors } from '../../hooks/useCursors';
+import { useCanvas } from '../../hooks/useCanvas';
 import { CursorLayer } from '../Collaboration/CursorLayer';
 
 export function Canvas() {
   const stageRef = useRef<any>(null);
+  
+  // Canvas state hook for shapes and drawing
+  const { 
+    mode,
+    shapes, 
+    selectedColor, 
+    drawingState, 
+    startDrawing, 
+    updateDrawing, 
+    finishDrawing, 
+    cancelDrawing 
+  } = useCanvas();
   
   // Cursor tracking hook
   const { remoteCursors } = useCursors(stageRef);
@@ -338,10 +351,78 @@ export function Canvas() {
     stage.batchDraw();
   }, []);
 
+  // Shape drawing event handlers
+  const handleMouseDown = useCallback((e: KonvaEventObject<MouseEvent>) => {
+    // Only handle drawing in create mode
+    if (mode !== 'create') return;
+    
+    // Only start drawing if we clicked on the stage background (not on existing shapes)
+    // Allow clicks on Stage, background Rect, or grid Lines
+    const targetClass = e.target.getClassName();
+    const isBackground = targetClass === 'Stage' || targetClass === 'Rect' || targetClass === 'Line';
+    
+    if (!isBackground) return;
+    
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+    
+    // Convert screen coordinates to canvas coordinates
+    const canvasPos = {
+      x: (pos.x - stage.x()) / stage.scaleX(),
+      y: (pos.y - stage.y()) / stage.scaleY(),
+    };
+    
+    // Check if position is within canvas bounds
+    if (canvasPos.x < 0 || canvasPos.y < 0 || 
+        canvasPos.x > CANVAS_WIDTH || canvasPos.y > CANVAS_HEIGHT) {
+      return;
+    }
+    
+    startDrawing(canvasPos.x, canvasPos.y);
+  }, [mode, startDrawing]);
+
+  const handleMouseMove = useCallback((_e: KonvaEventObject<MouseEvent>) => {
+    if (!drawingState.isDrawing) return;
+    
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+    
+    // Convert screen coordinates to canvas coordinates
+    const canvasPos = {
+      x: (pos.x - stage.x()) / stage.scaleX(),
+      y: (pos.y - stage.y()) / stage.scaleY(),
+    };
+    
+    updateDrawing(canvasPos.x, canvasPos.y);
+  }, [drawingState.isDrawing, updateDrawing]);
+
+  const handleMouseUp = useCallback(() => {
+    if (!drawingState.isDrawing) return;
+    finishDrawing();
+  }, [drawingState.isDrawing, finishDrawing]);
+
+  // Cancel drawing on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && drawingState.isDrawing) {
+        cancelDrawing();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [drawingState.isDrawing, cancelDrawing]);
+
   return (
     <div className="canvas-container">
       <div 
-        className="canvas-stage-container"
+        className={`canvas-stage-container mode-${mode}`}
         style={{
           position: 'relative',
           touchAction: 'none', // Disable default touch behaviors
@@ -355,9 +436,12 @@ export function Canvas() {
           ref={stageRef}
           width={stageSize.width}
           height={stageSize.height}
-          draggable={!isGesturing}
+          draggable={!isGesturing && !drawingState.isDrawing && mode === 'pan'}
           onWheel={handleWheel}
           onDragEnd={handleDragEnd}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
         >
           <Layer>
             {/* Canvas background - visual indicator of canvas bounds */}
@@ -387,7 +471,34 @@ export function Canvas() {
                 strokeWidth={1}
               />
             ))}
-            {/* Shapes will be rendered here in future PRs */}
+            {/* Render existing shapes from Firestore */}
+            {shapes.map((shape) => (
+              <Rect
+                key={shape.id}
+                x={shape.x}
+                y={shape.y}
+                width={shape.width}
+                height={shape.height}
+                fill={shape.color}
+                stroke={shape.color}
+                strokeWidth={2}
+              />
+            ))}
+            
+            {/* Render preview rectangle during drawing */}
+            {drawingState.isDrawing && drawingState.previewShape && (
+              <Rect
+                x={drawingState.previewShape.x}
+                y={drawingState.previewShape.y}
+                width={drawingState.previewShape.width}
+                height={drawingState.previewShape.height}
+                fill={selectedColor}
+                opacity={0.5}
+                stroke={selectedColor}
+                strokeWidth={2}
+                dash={[10, 5]}
+              />
+            )}
           </Layer>
         </Stage>
         
