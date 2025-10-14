@@ -122,7 +122,10 @@ export function useCursors(stageRef: React.RefObject<any>) {
     if (user) {
       // Remove cursor when mouse leaves canvas
       cursorService.removeCursor(user.uid).catch((error) => {
-        console.error('Failed to remove cursor:', error);
+        // Only log non-permission errors to avoid noise during logout
+        if (error.code !== 'PERMISSION_DENIED') {
+          console.error('Failed to remove cursor:', error);
+        }
       });
     }
   }, [user]);
@@ -151,7 +154,10 @@ export function useCursors(stageRef: React.RefObject<any>) {
       // Clean up cursor on unmount
       if (user) {
         cursorService.removeCursor(user.uid).catch((error) => {
-          console.error('Failed to remove cursor on cleanup:', error);
+          // Only log non-permission errors to avoid noise during logout/cleanup
+          if (error.code !== 'PERMISSION_DENIED') {
+            console.error('Failed to remove cursor on cleanup:', error);
+          }
         });
       }
     };

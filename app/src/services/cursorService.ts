@@ -129,8 +129,15 @@ class CursorService {
       // Clean up presence heartbeat tracking to avoid memory leaks
       delete this.presenceHeartbeats[userId];
     } catch (error) {
-      console.error('Error removing cursor:', error);
-      throw error;
+      // Handle permission errors gracefully during cleanup scenarios
+      if (error.code === 'PERMISSION_DENIED') {
+        console.warn('Permission denied removing cursor (likely during logout/cleanup):', userId);
+        // Still clean up local tracking even if database removal fails
+        delete this.presenceHeartbeats[userId];
+      } else {
+        console.error('Error removing cursor:', error);
+        throw error;
+      }
     }
   }
 
