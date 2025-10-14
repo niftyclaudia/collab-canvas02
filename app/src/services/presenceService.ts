@@ -1,4 +1,4 @@
-import { ref, set, onValue, off, remove, onDisconnect } from 'firebase/database';
+import { ref, set, onValue, off, onDisconnect } from 'firebase/database';
 import { database } from '../firebase';
 
 export interface PresenceData {
