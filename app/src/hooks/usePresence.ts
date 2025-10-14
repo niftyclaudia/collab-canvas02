@@ -14,13 +14,17 @@ export function usePresence() {
   const { user } = useAuth();
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
 
+  console.log('🚨 usePresence HOOK IS RUNNING - Updated version deployed!', { user: !!user, uid: user?.uid });
+
   // Subscribe to presence updates
   useEffect(() => {
     if (!user) {
+      console.log('🎯 usePresence: No user, not setting up presence subscription');
       setOnlineUsers([]);
       return;
     }
 
+    console.log('🎯 usePresence: Setting up presence subscription for user:', user.uid);
     const unsubscribe = presenceService.subscribeToPresence((updates: PresenceUpdate[]) => {
       console.log('🎯 usePresence received updates:', updates);
       console.log('🔍 Current user ID:', user?.uid);
@@ -60,6 +64,7 @@ export function usePresence() {
       setOnlineUsers(users);
     });
 
+    console.log('🎯 usePresence: Presence subscription set up, unsubscribe function ready');
     return unsubscribe;
   }, [user]);
 

@@ -62,28 +62,39 @@ class CursorService {
   subscribeToCursors(callback: (cursors: CursorUpdate[]) => void): () => void {
     const cursorsRef = ref(database, 'sessions/main/users');
     
+    console.log('🎯 CURSOR: Setting up cursor subscription to path:', cursorsRef.toString());
+    
     const handleCursorUpdates = (snapshot: any) => {
       const users = snapshot.val();
+      console.log('🎯 CURSOR: Raw cursor snapshot received:', users);
+      console.log('🎯 CURSOR: Full RTDB structure for cursors:', JSON.stringify(users, null, 2));
       
       if (!users) {
+        console.log('🎯 CURSOR: No users data, calling callback with empty array');
         callback([]);
         return;
       }
 
       const cursors: CursorUpdate[] = [];
       Object.entries(users).forEach(([userId, userData]: [string, any]) => {
+        console.log(`🎯 CURSOR: Processing user ${userId}:`, userData);
         if (userData?.cursor) {
+          console.log(`✅ CURSOR: User ${userId} has cursor data:`, userData.cursor);
           cursors.push({
             userId,
             cursor: userData.cursor,
           });
+        } else {
+          console.log(`❌ CURSOR: User ${userId} missing cursor data`);
         }
       });
 
+      console.log('📤 CURSOR: Sending cursor updates (total: ' + cursors.length + '):', cursors);
       callback(cursors);
     };
 
     // Set up the listener
+    console.log('🎯 CURSOR: Adding onValue listener to RTDB');
     onValue(cursorsRef, handleCursorUpdates);
     
     // Store reference for cleanup
@@ -91,6 +102,7 @@ class CursorService {
 
     // Return cleanup function
     return () => {
+      console.log('🎯 CURSOR: Cleaning up cursor subscription');
       off(cursorsRef, 'value', handleCursorUpdates);
       delete this.listeners[cursorsRef.key || 'cursors'];
     };
@@ -128,9 +140,10 @@ class CursorService {
       
       // Clean up presence heartbeat tracking to avoid memory leaks
       delete this.presenceHeartbeats[userId];
-    } catch (error) {
+    } catch (error: unknown) {
       // Handle permission errors gracefully during cleanup scenarios
-      if (error.code === 'PERMISSION_DENIED') {
+      const firebaseError = error as { code?: string };
+      if (firebaseError.code === 'PERMISSION_DENIED') {
         console.warn('Permission denied removing cursor (likely during logout/cleanup):', userId);
         // Still clean up local tracking even if database removal fails
         delete this.presenceHeartbeats[userId];

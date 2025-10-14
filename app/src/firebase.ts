@@ -22,6 +22,28 @@ export const auth = getAuth(app);
 export const firestore = getFirestore(app);
 export const database = getDatabase(app);
 
+// Debug information
+console.log('🔥 Firebase Configuration Debug Info:');
+console.log('📊 Environment mode:', import.meta.env.MODE);
+console.log('🌐 Hostname:', window.location.hostname);
+console.log('🔗 Database URL:', import.meta.env.VITE_FIREBASE_DATABASE_URL);
+console.log('🏗️ Project ID:', import.meta.env.VITE_FIREBASE_PROJECT_ID);
+console.log('🔑 Auth Domain:', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
+
+// Test Realtime Database connection in production
+if (import.meta.env.MODE === 'production') {
+  setTimeout(async () => {
+    try {
+      const { ref, get } = await import('firebase/database');
+      const testRef = ref(database, '.info/connected');
+      const snapshot = await get(testRef);
+      console.log('🔗 Realtime Database connection test:', snapshot.val() ? 'CONNECTED' : 'DISCONNECTED');
+    } catch (error) {
+      console.error('❌ Realtime Database connection test failed:', error);
+    }
+  }, 2000);
+}
+
 // Connect to emulators in development mode
 if (import.meta.env.MODE === 'development' || window.location.hostname === 'localhost') {
   try {

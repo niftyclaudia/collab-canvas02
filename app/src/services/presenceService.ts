@@ -83,6 +83,7 @@ class PresenceService {
    */
   subscribeToPresence(callback: (users: PresenceUpdate[]) => void): () => void {
     const presenceRef = ref(database, 'sessions/main/users');
+    console.log('🎯 PRESENCE: Setting up presence subscription to path:', presenceRef.toString());
     
     const handlePresenceUpdates = (snapshot: any) => {
       const users = snapshot.val();
@@ -118,6 +119,7 @@ class PresenceService {
     };
 
     // Set up the listener
+    console.log('🎯 PRESENCE: Adding onValue listener to RTDB');
     onValue(presenceRef, handlePresenceUpdates);
     
     // Store reference for cleanup
@@ -125,6 +127,7 @@ class PresenceService {
 
     // Return cleanup function
     return () => {
+      console.log('🎯 PRESENCE: Cleaning up presence subscription');
       off(presenceRef, 'value', handlePresenceUpdates);
       delete this.listeners[presenceRef.key || 'presence'];
     };

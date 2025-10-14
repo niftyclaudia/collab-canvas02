@@ -69,21 +69,27 @@ class AuthService {
    */
   async login(email: string, password: string): Promise<User> {
     try {
+      console.log('🚨 LOGIN ATTEMPT - Updated auth service deployed!', { email });
+      
       // Sign in with Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
+
+      console.log('✅ Firebase auth successful, fetching user doc for:', firebaseUser.uid);
 
       // Get user data from Firestore
       const userDocRef = doc(firestore, 'users', firebaseUser.uid);
       const userDoc = await getDoc(userDocRef);
 
       if (!userDoc.exists()) {
+        console.error('❌ User document not found in Firestore for uid:', firebaseUser.uid);
         throw new Error('User document not found in database');
       }
 
       const userData = userDoc.data() as Omit<User, 'uid'>;
       
       console.log('✅ User logged in successfully:', firebaseUser.uid);
+      console.log('✅ User data from Firestore:', userData);
 
       return {
         uid: firebaseUser.uid,
@@ -91,6 +97,7 @@ class AuthService {
       };
     } catch (error) {
       console.error('❌ Login error:', error);
+      console.error('❌ Login error details:', JSON.stringify(error, null, 2));
       throw error;
     }
   }

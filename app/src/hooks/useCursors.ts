@@ -19,6 +19,8 @@ export function useCursors(stageRef: React.RefObject<any>) {
   const throttledUpdateRef = useRef<((x: number, y: number) => void) & { cancel(): void } | null>(null);
   const isTrackingRef = useRef(false);
 
+  console.log('🚨 useCursors HOOK IS RUNNING - Updated version deployed!', { user: !!user, uid: user?.uid });
+
   // Create throttled update function
   useEffect(() => {
     if (!user) return;
@@ -49,12 +51,23 @@ export function useCursors(stageRef: React.RefObject<any>) {
 
   // Subscribe to remote cursors
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      console.log('🎯 useCursors: No user, not setting up cursor subscription');
+      return;
+    }
 
+    console.log('🎯 useCursors: Setting up cursor subscription for user:', user.uid);
     const unsubscribe = cursorService.subscribeToCursors((cursors: CursorUpdate[]) => {
+      console.log('🎯 useCursors: Received cursor updates:', cursors);
+      console.log('🎯 useCursors: Current user ID to filter out:', user.uid);
+      
       // Filter out own cursor and map to RemoteCursor format
       const remoteCursors = cursors
-        .filter((cursor) => cursor.userId !== user.uid)
+        .filter((cursor) => {
+          const isNotMe = cursor.userId !== user.uid;
+          console.log(`🎯 useCursors: User ${cursor.userId} isNotMe: ${isNotMe}`);
+          return isNotMe;
+        })
         .map((cursor) => ({
           userId: cursor.userId,
           x: cursor.cursor.x,
@@ -64,9 +77,11 @@ export function useCursors(stageRef: React.RefObject<any>) {
           timestamp: cursor.cursor.timestamp,
         }));
 
+      console.log('🎯 useCursors: Final remote cursors after filtering:', remoteCursors);
       setRemoteCursors(remoteCursors);
     });
 
+    console.log('🎯 useCursors: Cursor subscription set up, unsubscribe function ready');
     return unsubscribe;
   }, [user]);
 
