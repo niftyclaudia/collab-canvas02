@@ -6,6 +6,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, MIN_ZOOM, MAX_ZOOM } from '../../utils/con
 import { useCursors } from '../../hooks/useCursors';
 import { useCanvas } from '../../hooks/useCanvas';
 import { CursorLayer } from '../Collaboration/CursorLayer';
+import { canvasService } from '../../services/canvasService';
 import type { Shape } from '../../services/canvasService';
 
 export function Canvas() {
@@ -369,16 +370,53 @@ export function Canvas() {
     }
   }, [lockShape]);
   
+  // Handle shape drag movement with boundary constraints
+  const handleShapeDragMove = useCallback((e: KonvaEventObject<DragEvent>, shape: Shape) => {
+    const node = e.target as Konva.Rect;
+    const currentX = node.x();
+    const currentY = node.y();
+    
+    // Clamp position to canvas boundaries in real-time
+    const clampedPosition = canvasService.clampShapeToCanvas(
+      currentX, 
+      currentY, 
+      shape.width, 
+      shape.height
+    );
+    
+    // Only update position if it was clamped
+    if (clampedPosition.x !== currentX || clampedPosition.y !== currentY) {
+      node.x(clampedPosition.x);
+      node.y(clampedPosition.y);
+    }
+  }, []);
+
   const handleShapeDragEnd = useCallback(async (e: KonvaEventObject<DragEvent>, shape: Shape) => {
     const node = e.target as Konva.Rect;
-    const newPosition = {
-      x: node.x(),
-      y: node.y(),
+    
+    // Validate and clamp final position
+    const validatedPosition = canvasService.validateShapePosition(
+      node.x(),
+      node.y(),
+      shape.width,
+      shape.height
+    );
+    
+    // Apply clamped position if needed
+    if (validatedPosition.wasClamped) {
+      node.x(validatedPosition.x);
+      node.y(validatedPosition.y);
+      console.log('🔒 Shape position clamped to canvas bounds');
+    }
+    
+    const finalPosition = {
+      x: validatedPosition.x,
+      y: validatedPosition.y,
     };
     
     try {
       // Update shape position in Firestore
-      await updateShape(shape.id, newPosition);
+      await updateShape(shape.id, finalPosition);
       
       // Release lock after successful drag
       await unlockShape(shape.id);
@@ -552,6 +590,7 @@ export function Canvas() {
                     opacity={opacity}
                     draggable={isDraggable}
                     onClick={(e) => handleShapeClick(e, shape)}
+                    onDragMove={(e) => handleShapeDragMove(e, shape)}
                     onDragEnd={(e) => handleShapeDragEnd(e, shape)}
                     listening={lockStatus !== 'locked-by-other'} // Disable interaction if locked by other
                   />

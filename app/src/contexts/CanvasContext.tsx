@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useCallback, useRef } from '
 import { DEFAULT_SHAPE_COLOR } from '../utils/constants';
 import { canvasService } from '../services/canvasService';
 import type { Shape, CreateShapeData } from '../services/canvasService';
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 
@@ -150,10 +151,26 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         y
       );
 
+      // Clamp preview rectangle to canvas bounds
+      const clampedPosition = canvasService.clampShapeToCanvas(
+        normalized.x,
+        normalized.y,
+        normalized.width,
+        normalized.height
+      );
+
+      // Create constrained preview shape
+      const constrainedShape = {
+        x: clampedPosition.x,
+        y: clampedPosition.y,
+        width: Math.min(normalized.width, CANVAS_WIDTH - clampedPosition.x),
+        height: Math.min(normalized.height, CANVAS_HEIGHT - clampedPosition.y),
+      };
+
       return {
         ...prev,
         currentPoint: { x, y },
-        previewShape: normalized,
+        previewShape: constrainedShape,
       };
     });
   }, []);
