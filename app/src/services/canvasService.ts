@@ -12,6 +12,7 @@ import {
   orderBy 
 } from 'firebase/firestore';
 import { firestore } from '../firebase';
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 
 // Shape interface matching the data model from task.md
 export interface Shape {
@@ -184,9 +185,6 @@ class CanvasService {
    * Validate shape bounds (ensure within canvas limits)
    */
   validateShapeBounds(x: number, y: number, width: number, height: number): boolean {
-    const CANVAS_WIDTH = 5000;
-    const CANVAS_HEIGHT = 5000;
-    
     return (
       x >= 0 && 
       y >= 0 && 
@@ -195,6 +193,39 @@ class CanvasService {
       width > 0 &&
       height > 0
     );
+  }
+
+  /**
+   * Clamp shape position to stay within canvas bounds
+   * Returns corrected position if shape would go outside canvas
+   */
+  clampShapeToCanvas(x: number, y: number, width: number, height: number): { x: number; y: number } {
+    
+    // Ensure shape stays within left and top bounds
+    const clampedX = Math.max(0, Math.min(x, CANVAS_WIDTH - width));
+    const clampedY = Math.max(0, Math.min(y, CANVAS_HEIGHT - height));
+    
+    return { x: clampedX, y: clampedY };
+  }
+
+  /**
+   * Validate and clamp shape position for drag operations
+   * Returns corrected position and whether clamping was needed
+   */
+  validateShapePosition(x: number, y: number, width: number, height: number): { 
+    x: number; 
+    y: number; 
+    wasClamped: boolean 
+  } {
+    const originalX = x;
+    const originalY = y;
+    const clamped = this.clampShapeToCanvas(x, y, width, height);
+    
+    return {
+      x: clamped.x,
+      y: clamped.y,
+      wasClamped: originalX !== clamped.x || originalY !== clamped.y
+    };
   }
 
   /**
