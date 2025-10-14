@@ -79,20 +79,6 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
         <form onSubmit={handleSubmit} className="auth-form">
 
           <div className="form-group">
-            <label htmlFor="email">Email</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              placeholder="Enter your email"
-              required
-              disabled={loading}
-            />
-          </div>
-
-          <div className="form-group">
             <label htmlFor="username">Username</label>
             <input
               type="text"
@@ -105,6 +91,20 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
               disabled={loading}
               minLength={2}
               maxLength={30}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              placeholder="Enter your email"
+              required
+              disabled={loading}
             />
           </div>
 
