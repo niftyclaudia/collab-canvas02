@@ -1,4 +1,3 @@
-import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CanvasProvider } from './contexts/CanvasContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -6,6 +5,7 @@ import AuthComponent from './components/Auth/AuthProvider';
 import AppShell from './components/Layout/AppShell';
 import Canvas from './components/Canvas/Canvas';
 import ToastContainer from './components/UI/ToastContainer';
+import ErrorBoundary from './components/UI/ErrorBoundary';
 import './App.css'
 
 // Main app component with route guard logic
@@ -17,7 +17,7 @@ function AppContent() {
     return (
       <div className="loading-container">
         <div className="loading-spinner" />
-        <p>Loading...</p>
+        <p>Loading CollabCanvas...</p>
       </div>
     );
   }
@@ -29,22 +29,26 @@ function AppContent() {
 
   // Show main app if authenticated
   return (
-    <CanvasProvider>
-      <AppShell>
-        <Canvas />
-      </AppShell>
-    </CanvasProvider>
+    <ErrorBoundary>
+      <CanvasProvider>
+        <AppShell>
+          <Canvas />
+        </AppShell>
+      </CanvasProvider>
+    </ErrorBoundary>
   );
 }
 
 function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <AppContent />
-        <ToastContainer />
-      </ToastProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>
+          <AppContent />
+          <ToastContainer />
+        </ToastProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
