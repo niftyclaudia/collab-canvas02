@@ -23,6 +23,7 @@ export function Navbar() {
           <h1>CollabCanvas</h1>
         </div>
 
+
         <div className="navbar-user">
           <div className="user-info">
             <div 

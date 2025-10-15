@@ -11,6 +11,7 @@ export function ColorToolbar() {
     { name: 'Yellow', value: SHAPE_COLORS.YELLOW },
   ];
 
+
   return (
     <div className="color-toolbar">
       <div className="color-toolbar-container">
@@ -56,6 +57,7 @@ export function ColorToolbar() {
             </button>
           ))}
         </div>
+
       </div>
     </div>
   );

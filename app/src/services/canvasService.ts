@@ -9,7 +9,8 @@ import {
   serverTimestamp,
   Timestamp,
   query,
-  orderBy 
+  orderBy,
+  writeBatch
 } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
@@ -320,6 +321,34 @@ class CanvasService {
     } catch (error) {
       console.error('❌ Error fetching user display name:', error);
       return 'Unknown User';
+    }
+  }
+
+  /**
+   * Clear all shapes from the canvas
+   * Deletes all shapes in the collection using a batch operation
+   */
+  async clearCanvas(): Promise<void> {
+    try {
+      const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
+      const querySnapshot = await getDocs(shapesCollectionRef);
+      
+      if (querySnapshot.empty) {
+        console.log('✅ Canvas is already empty');
+        return;
+      }
+
+      // Use batch to delete all shapes efficiently
+      const batch = writeBatch(firestore);
+      querySnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+
+      await batch.commit();
+      console.log('✅ Canvas cleared successfully:', querySnapshot.docs.length, 'shapes deleted');
+    } catch (error) {
+      console.error('❌ Error clearing canvas:', error);
+      throw error;
     }
   }
 

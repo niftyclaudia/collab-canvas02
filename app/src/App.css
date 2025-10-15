@@ -287,6 +287,12 @@
   color: white;
 }
 
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .navbar-user {
   display: flex;
   align-items: center;
@@ -328,6 +334,44 @@
 .logout-button:disabled {
   background: #6b7280;
   cursor: not-allowed;
+}
+
+.clear-canvas-button {
+  background: #f97316;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+  font-weight: 500;
+}
+
+.clear-canvas-button:hover {
+  background: #ea580c;
+}
+
+.clear-canvas-button:active {
+  background: #c2410c;
+}
+
+/* Sidebar clear canvas section */
+.clear-canvas-section {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.sidebar-clear-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  padding: 0.875rem 1rem;
+  margin-top: 0.5rem;
 }
 
 /* App body layout */
