@@ -1,0 +1,8 @@
+#!/bin/bash
+# Quick PR command wrapper
+# Usage: ./pr [target-branch]
+# Example: ./pr develop
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$SCRIPT_DIR/scripts/create-pr.sh" "$@"
+
