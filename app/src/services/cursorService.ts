@@ -162,6 +162,47 @@ class CursorService {
   }
 
   /**
+   * Clean up stale cursor data (cursors without corresponding presence data)
+   */
+  async cleanupStaleCursors(): Promise<void> {
+    try {
+      const { get } = await import('firebase/database');
+      const usersRef = ref(database, 'sessions/main/users');
+      const snapshot = await get(usersRef);
+      
+      if (!snapshot.exists()) {
+        console.log('🧹 CURSOR: No users data to cleanup');
+        return;
+      }
+
+      const users = snapshot.val();
+      const cleanupPromises: Promise<void>[] = [];
+      
+      console.log('🧹 CURSOR: Cleaning up stale cursor data...');
+      
+      Object.entries(users).forEach(([userId, userData]: [string, any]) => {
+        const hasCursor = userData?.cursor;
+        const hasValidPresence = userData?.presence?.online === true;
+        
+        // If user has cursor data but no valid presence, clean up the cursor
+        if (hasCursor && !hasValidPresence) {
+          console.log(`🧹 CURSOR: Removing stale cursor for user ${userId} (${userData.cursor.username})`);
+          cleanupPromises.push(this.removeCursor(userId));
+        }
+      });
+      
+      if (cleanupPromises.length > 0) {
+        await Promise.all(cleanupPromises);
+        console.log(`✅ CURSOR: Cleaned up ${cleanupPromises.length} stale cursors`);
+      } else {
+        console.log('✅ CURSOR: No stale cursors found to cleanup');
+      }
+    } catch (error) {
+      console.error('❌ CURSOR: Error during cursor cleanup:', error);
+    }
+  }
+
+  /**
    * Clean up all listeners
    */
   cleanup(): void {

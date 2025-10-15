@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { throttle } from 'lodash';
 import { cursorService, type CursorUpdate } from '../services/cursorService';
 import { useAuth } from '../contexts/AuthContext';
+import { usePresence } from './usePresence';
 import { CURSOR_UPDATE_THROTTLE, CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 
 export interface RemoteCursor {
@@ -15,6 +16,7 @@ export interface RemoteCursor {
 
 export function useCursors(stageRef: React.RefObject<any>) {
   const { user } = useAuth();
+  const { onlineUsers } = usePresence(); // Get online users from presence system
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
   const throttledUpdateRef = useRef<((x: number, y: number) => void) & { cancel(): void } | null>(null);
   const isTrackingRef = useRef(false);
@@ -57,16 +59,32 @@ export function useCursors(stageRef: React.RefObject<any>) {
     }
 
     console.log('🎯 useCursors: Setting up cursor subscription for user:', user.uid);
+    
+    // Clean up any stale cursor data before subscribing
+    cursorService.cleanupStaleCursors().catch((error) => {
+      console.error('❌ Failed to cleanup stale cursor data:', error);
+    });
+    
     const unsubscribe = cursorService.subscribeToCursors((cursors: CursorUpdate[]) => {
       console.log('🎯 useCursors: Received cursor updates:', cursors);
       console.log('🎯 useCursors: Current user ID to filter out:', user.uid);
+      console.log('🎯 useCursors: Online users from presence:', onlineUsers.map(u => ({ userId: u.userId, username: u.username })));
       
-      // Filter out own cursor and map to RemoteCursor format
+      // Create a Set of online user IDs for efficient lookup
+      const onlineUserIds = new Set(onlineUsers.map(u => u.userId));
+      
+      // Filter cursors: exclude own cursor AND only show cursors for users who are actually online
       const remoteCursors = cursors
         .filter((cursor) => {
           const isNotMe = cursor.userId !== user.uid;
-          console.log(`🎯 useCursors: User ${cursor.userId} isNotMe: ${isNotMe}`);
-          return isNotMe;
+          const isOnline = onlineUserIds.has(cursor.userId);
+          
+          console.log(`🎯 useCursors: User ${cursor.userId} (${cursor.cursor.username}):`);
+          console.log(`  - isNotMe: ${isNotMe}`);
+          console.log(`  - isOnline: ${isOnline}`);
+          console.log(`  - passes filter: ${isNotMe && isOnline}`);
+          
+          return isNotMe && isOnline;
         })
         .map((cursor) => ({
           userId: cursor.userId,
@@ -77,13 +95,13 @@ export function useCursors(stageRef: React.RefObject<any>) {
           timestamp: cursor.cursor.timestamp,
         }));
 
-      console.log('🎯 useCursors: Final remote cursors after filtering:', remoteCursors);
+      console.log('🎯 useCursors: Final remote cursors after presence validation:', remoteCursors);
       setRemoteCursors(remoteCursors);
     });
 
     console.log('🎯 useCursors: Cursor subscription set up, unsubscribe function ready');
     return unsubscribe;
-  }, [user]);
+  }, [user, onlineUsers]);
 
   // Convert screen coordinates to canvas coordinates
   const screenToCanvasCoordinates = useCallback((screenX: number, screenY: number) => {
