@@ -208,6 +208,39 @@ class PresenceService {
   }
 
   /**
+   * Explicit logout cleanup - ensures proper offline status before auth signout
+   * This prevents race conditions between disconnect handlers and manual cleanup
+   */
+  async logoutCleanup(userId: string): Promise<void> {
+    console.log('🚪 Starting explicit logout cleanup for user:', userId);
+    
+    try {
+      // Step 1: Cancel disconnect handlers first to prevent them from overriding our manual cleanup
+      await this.cancelDisconnectHandler(userId);
+      console.log('✅ Disconnect handlers canceled during logout');
+      
+      // Step 2: Explicitly set user offline with a slight delay to ensure it takes effect
+      await this.setOffline(userId);
+      console.log('✅ User explicitly set offline during logout');
+      
+      // Step 3: Small delay to ensure the offline status is written to Firebase before auth signout
+      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('✅ Logout cleanup completed successfully');
+      
+    } catch (error) {
+      console.error('❌ Error during logout cleanup:', error);
+      // Still try to set offline even if other steps failed
+      try {
+        await this.setOffline(userId);
+        console.log('✅ Fallback: User set offline after cleanup error');
+      } catch (fallbackError) {
+        console.error('❌ Fallback offline setting also failed:', fallbackError);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Clean up stale presence data (users inactive for more than the timeout)
    */
   async cleanupStalePresence(timeoutMinutes: number = 5): Promise<void> {

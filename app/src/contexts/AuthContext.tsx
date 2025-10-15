@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { authService, type User } from '../services/authService';
+import { presenceService } from '../services/presenceService';
 
 interface AuthContextType {
   user: User | null;
@@ -62,9 +63,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const logout = async (): Promise<void> => {
     setLoading(true);
     try {
+      // Step 1: Clean up presence data BEFORE auth signout to prevent race conditions
+      if (user?.uid) {
+        console.log('🚪 AuthContext: Starting presence cleanup before logout for user:', user.uid);
+        await presenceService.logoutCleanup(user.uid);
+        console.log('✅ AuthContext: Presence cleanup completed, proceeding with auth logout');
+      }
+      
+      // Step 2: Now perform the actual auth logout
       await authService.logout();
       // setUser(null) will be called by the auth state listener
     } catch (error) {
+      console.error('❌ AuthContext: Error during logout process:', error);
       setLoading(false);
       throw error;
     }
