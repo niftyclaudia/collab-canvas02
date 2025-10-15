@@ -26,8 +26,8 @@ export function usePresence() {
 
     console.log('🎯 usePresence: Setting up presence subscription for user:', user.uid);
     
-    // Clean up stale presence data before subscribing
-    presenceService.cleanupStalePresence(5).catch((error) => {
+    // Clean up stale presence data before subscribing (30 second timeout for faster cleanup)
+    presenceService.cleanupStalePresence(0.5).catch((error) => {
       console.error('❌ Failed to cleanup stale presence data:', error);
     });
     
@@ -43,7 +43,7 @@ export function usePresence() {
       
       // Filter and map presence updates to OnlineUser format
       const now = Date.now();
-      const ACTIVE_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
+      const ACTIVE_TIMEOUT = 30 * 1000; // 30 seconds in milliseconds (reduced from 5 minutes for faster cleanup)
       
       const users = updates
         .filter((update) => {
@@ -158,14 +158,18 @@ export function usePresence() {
 
     goOnline();
 
-    // Cleanup function
+    // Cleanup function - only runs for non-logout scenarios
     return () => {
       if (user) {
-        // Cancel disconnect handlers and go offline
+        console.log('🧹 usePresence cleanup: Starting presence cleanup for user:', user.uid);
+        // This cleanup runs when:
+        // 1. User navigates away from page (browser close/refresh)
+        // 2. Component unmounts for other reasons
+        // Note: For explicit logout, cleanup is handled in AuthContext to prevent race conditions
         presenceService.cancelDisconnectHandler(user.uid).then(() => {
           return presenceService.setOffline(user.uid);
         }).catch((error) => {
-          console.error('Failed to cleanup presence:', error);
+          console.error('❌ usePresence cleanup failed:', error);
         });
       }
     };
