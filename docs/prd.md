@@ -1487,7 +1487,7 @@ private async executeSingleTool(call: any, userId: string) {
     const args = JSON.parse(argsStr);
     
     switch (name) {
-        case 'createShape':
+        case 'createRectangle':
         return await this.canvasService.createShape({
             type: 'rectangle',
             x: args.x,
@@ -1626,7 +1626,7 @@ private async executeSingleTool(call: any, userId: string) {
     const toolNames = results.map(r => r.tool);
     
     // Generate specific messages based on tools used
-    if (toolNames.includes('createShape') && toolNames.length === 1) {
+    if (toolNames.includes('createRectangle') && toolNames.length === 1) {
       return '✓ Created 1 rectangle';
     }
     
@@ -1675,7 +1675,7 @@ private async executeSingleTool(call: any, userId: string) {
     }
     
     // Multi-step operations
-    const shapeCount = toolNames.filter(t => t === 'createShape').length;
+    const shapeCount = toolNames.filter(t => t === 'createRectangle').length;
     const textCount = toolNames.filter(t => t === 'createText').length;
     
     if (shapeCount > 1 || textCount > 1) {
@@ -1710,7 +1710,7 @@ private getToolDefinitions() {
     {
       type: "function",
       function: {
-        name: "createShape",
+        name: "createRectangle",
         description: "Creates a rectangle on the canvas at specified position with given dimensions and color.",
         parameters: {
           type: "object",
@@ -1979,6 +1979,21 @@ private getToolDefinitions() {
 ```
 
 **Total: 15 tools across all categories**
+1. createRectangle
+2. createCircle
+3. createTriangle
+4. createText
+5. moveShape
+6. resizeShape
+7. rotateShape
+8. duplicateShape
+9. deleteShape
+10. groupShapes
+11. alignShapes
+12. arrangeShapesInRow
+13. bringToFront
+14. addComment
+15. getCanvasState
 
 ---
 
@@ -2044,24 +2059,24 @@ MULTI-STEP OPERATIONS:
 **Login Form:**
 User: "create a login form"
 → createText(text: "Username", x: 2400, y: 2200, fontSize: 14, color: "#000000")
-→ createShape(x: 2300, y: 2225, width: 300, height: 40, color: "#ffffff")
+→ createRectangle(x: 2300, y: 2225, width: 300, height: 40, color: "#ffffff")
 → createText(text: "Password", x: 2400, y: 2290, fontSize: 14, color: "#000000")
-→ createShape(x: 2300, y: 2315, width: 300, height: 40, color: "#ffffff")
+→ createRectangle(x: 2300, y: 2315, width: 300, height: 40, color: "#ffffff")
 → createText(text: "Submit", x: 2450, y: 2385, fontSize: 16, color: "#ffffff")
-→ createShape(x: 2350, y: 2375, width: 200, height: 50, color: "#3b82f6")
+→ createRectangle(x: 2350, y: 2375, width: 200, height: 50, color: "#3b82f6")
 
 **Grid Creation:**
 User: "make a 3x3 grid of red squares"
 → Calculate: spacing = 110px, start position centered at (2200, 2200)
-→ createShape(x: 2200, y: 2200, width: 80, height: 80, color: "#ef4444")
-→ createShape(x: 2310, y: 2200, width: 80, height: 80, color: "#ef4444")
-→ createShape(x: 2420, y: 2200, width: 80, height: 80, color: "#ef4444")
-→ createShape(x: 2200, y: 2310, width: 80, height: 80, color: "#ef4444")
-→ createShape(x: 2310, y: 2310, width: 80, height: 80, color: "#ef4444")
-→ createShape(x: 2420, y: 2310, width: 80, height: 80, color: "#ef4444")
-→ createShape(x: 2200, y: 2420, width: 80, height: 80, color: "#ef4444")
-→ createShape(x: 2310, y: 2420, width: 80, height: 80, color: "#ef4444")
-→ createShape(x: 2420, y: 2420, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2200, y: 2200, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2310, y: 2200, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2420, y: 2200, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2200, y: 2310, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2310, y: 2310, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2420, y: 2310, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2200, y: 2420, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2310, y: 2420, width: 80, height: 80, color: "#ef4444")
+→ createRectangle(x: 2420, y: 2420, width: 80, height: 80, color: "#ef4444")
 
 LAYOUT COMMANDS (CRITICAL - REQUIRED FOR RUBRIC):
 User: "arrange these shapes in a horizontal row"
@@ -2103,7 +2118,7 @@ User: "add a comment 'needs review' to the blue rectangle"
 EXAMPLES:
 
 User: "Create a blue rectangle in the center"
-→ createShape(x: 2400, y: 2425, width: 200, height: 150, color: "#3b82f6")
+→ createRectangle(x: 2400, y: 2425, width: 200, height: 150, color: "#3b82f6")
 
 User: "Add text that says Hello World at the top"
 → createText(text: "Hello World", x: 2500, y: 150, fontSize: 16, color: "#000000")
@@ -2153,7 +2168,7 @@ Be helpful, accurate, and execute commands precisely. Always validate parameters
 - ✅ Alignment commands
 - ✅ Z-index commands
 - ✅ Comment commands
-- ✅ Comprehensive examples for all 13 tools
+- ✅ Comprehensive examples for all 15 tools
 
 ---
 
@@ -2587,7 +2602,7 @@ The complete task list with 17 PRs is detailed in `task-phase2.md`. Key mileston
 
 **AI Service:**
 - [ ] Can initialize OpenAI client
-- [ ] All 13 tool definitions valid
+- [ ] All 15 tool definitions valid
 - [ ] executeCommand calls correct tools
 - [ ] Error handling works
 
@@ -2640,7 +2655,7 @@ Based on Phase 2 features:
 | **1. Collaborative Infrastructure** | 30 | 28-30 | ✅ Excellent - all targets met |
 | **2. Canvas Features & Performance** | 20 | 18-20 | ✅ Excellent - multi-select, transforms, text |
 | **3. Advanced Figma Features** | 15 | 13-15 | ✅ Excellent - 3 Tier 1 + 2 Tier 2 + 1 Tier 3 |
-| **4. AI Canvas Agent** | 25 | 23-25 | ✅ Excellent - 13 tools, layout commands included |
+| **4. AI Canvas Agent** | 25 | 23-25 | ✅ Excellent - 15 tools, layout commands included |
 | **5. Technical Implementation** | 10 | 9-10 | ✅ Excellent - clean architecture |
 | **6. Documentation** | 5 | 5 | ✅ Excellent - comprehensive |
 | **7. AI Dev Log** | Pass/Fail | PASS | ✅ All sections included |
@@ -2763,7 +2778,7 @@ Based on Phase 2 features:
 - [ ] Keyboard shortcuts (10+ shortcuts)
 - [ ] Copy/paste functionality
 - [ ] Collaborative comments
-- [ ] AI agent with 13 tools
+- [ ] AI agent with 15 tools
 - [ ] AI layout command ("arrange in a row")
 - [ ] AI complex commands (login form, grid)
 - [ ] Demo video (3-5 min, all requirements)
@@ -2858,7 +2873,7 @@ Based on Phase 2 features:
 **Week 1 (Days 6-7): AI Integration**
 - Focus: AI service, tools, chat UI
 - Critical: Include layout command
-- Gate: AI executes all 13 tool types
+- Gate: AI executes all 15 tool types
 
 **Week 1 (Day 7): Polish & Deploy**
 - Focus: Testing, bug fixes, demo video
@@ -2880,7 +2895,7 @@ Based on Phase 2 features:
 - [ ] Reviewed rubric thoroughly
 - [ ] Understand scoring breakdown
 - [ ] Know which features are critical vs nice-to-have
-- [ ] Understand 13 AI tools and their categories
+- [ ] Understand 15 AI tools and their categories
 - [ ] Reviewed demo video requirements
 
 ### Planning
