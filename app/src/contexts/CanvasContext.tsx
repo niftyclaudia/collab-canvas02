@@ -41,6 +41,7 @@ export interface CanvasState {
   // Shape operations
   createShape: (shapeData: Omit<CreateShapeData, 'createdBy'>) => Promise<void>;
   updateShape: (shapeId: string, updates: any) => Promise<void>;
+  clearCanvas: () => Promise<void>;
   
   // Locking operations
   lockShape: (shapeId: string) => Promise<boolean>;
@@ -128,6 +129,24 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       throw error;
     }
   }, []);
+
+  const clearCanvas = useCallback(async () => {
+    try {
+      await canvasService.clearCanvas();
+      // Clear selected shape since canvas is now empty
+      setSelectedShapeId(null);
+      // Clear any drawing state
+      setDrawingState(initialDrawingState);
+      // Clear all lock timeouts
+      lockTimeoutRef.current.forEach(timeout => window.clearTimeout(timeout));
+      lockTimeoutRef.current.clear();
+      showToast('Canvas cleared successfully', 'success');
+    } catch (error) {
+      console.error('Failed to clear canvas:', error);
+      showToast('Failed to clear canvas', 'error');
+      throw error;
+    }
+  }, [showToast]);
 
   // Drawing helpers
   const startDrawing = useCallback((x: number, y: number) => {
@@ -351,6 +370,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     setDrawingState,
     createShape,
     updateShape,
+    clearCanvas,
     lockShape,
     unlockShape,
     isShapeLockedByMe,
