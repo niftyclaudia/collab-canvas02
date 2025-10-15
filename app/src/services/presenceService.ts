@@ -208,6 +208,51 @@ class PresenceService {
   }
 
   /**
+   * Clean up stale presence data (users inactive for more than the timeout)
+   */
+  async cleanupStalePresence(timeoutMinutes: number = 5): Promise<void> {
+    try {
+      const { get } = await import('firebase/database');
+      const presenceRef = ref(database, 'sessions/main/users');
+      const snapshot = await get(presenceRef);
+      
+      if (!snapshot.exists()) {
+        console.log('🧹 No presence data to cleanup');
+        return;
+      }
+
+      const users = snapshot.val();
+      const now = Date.now();
+      const timeout = timeoutMinutes * 60 * 1000;
+      
+      console.log(`🧹 Cleaning up presence data older than ${timeoutMinutes} minutes`);
+      
+      const cleanupPromises: Promise<void>[] = [];
+      
+      Object.entries(users).forEach(([userId, userData]: [string, any]) => {
+        if (userData?.presence) {
+          const lastSeen = userData.presence.lastSeen || 0;
+          const isStale = (now - lastSeen) > timeout;
+          
+          if (isStale && userData.presence.online) {
+            console.log(`🧹 Marking stale user as offline: ${userData.presence.username} (${userId}) - last seen ${Math.round((now - lastSeen) / 1000 / 60)} minutes ago`);
+            cleanupPromises.push(this.setOffline(userId));
+          }
+        }
+      });
+      
+      if (cleanupPromises.length > 0) {
+        await Promise.all(cleanupPromises);
+        console.log(`✅ Cleaned up ${cleanupPromises.length} stale users`);
+      } else {
+        console.log('✅ No stale users found to cleanup');
+      }
+    } catch (error) {
+      console.error('❌ Error during presence cleanup:', error);
+    }
+  }
+
+  /**
    * Clean up all listeners and disconnect handlers
    */
   cleanup(): void {

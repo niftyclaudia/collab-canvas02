@@ -1,8 +1,22 @@
-# CollabCanvas - Development Setup
+# CollabCanvas - Real-time Collaborative Canvas
 
-This is the main React application for CollabCanvas. For project overview and documentation, see the [main README](../README.md) and [docs folder](../docs/).
+A real-time collaborative design canvas built with React, TypeScript, Firebase, and Konva.js.
 
-## Quick Development Setup
+## Features
+
+- **Real-time collaboration:** Multiple users can work simultaneously
+- **Live cursors:** See other users' cursor positions and names in real-time
+- **Shape creation:** Click and drag to create rectangles
+- **Simple locking:** First-click wins shape locking system
+- **Presence awareness:** See who's currently online
+- **Pan and zoom:** Navigate a large 5000×5000 canvas
+
+## Tech Stack
+
+- **Frontend:** React 19 + TypeScript + Vite
+- **Canvas:** Konva.js + react-konva
+- **Backend:** Firebase (Auth + Firestore + Realtime Database)
+- **Deployment:** Vercel
 
 ## Local Development
 
@@ -92,11 +106,4 @@ vercel --prod    # Deploy to Vercel
 
 ---
 
-## 📖 Full Documentation
-
-This README covers development setup only. For complete project information:
-
-- **[Main Project README](../README.md)** - Project overview, features, and architecture
-- **[Documentation Hub](../docs/)** - Comprehensive documentation index
-- **[Setup Guide](../docs/guides/setup-guide.md)** - Detailed development guide
-- **[Architecture](../docs/project/architecture.md)** - Technical system design
+For full project documentation, see the parent directory's `docs/` folder.
