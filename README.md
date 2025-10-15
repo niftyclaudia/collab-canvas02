@@ -150,6 +150,26 @@ We welcome contributions! Here's how to get started:
 - Follow our [Architecture Guide](docs/project/architecture.md) for patterns
 - Reference [Task Breakdown](docs/project/tasks.md) for implementation approach
 
+### 🚀 Quick PR Creation
+Use our automated PR script for streamlined pull request creation:
+
+```bash
+# Create a feature branch and make your commits
+git checkout -b feature/my-awesome-feature
+git commit -m "Add amazing feature"
+
+# Create PR with automatic summary
+./pr develop
+```
+
+The script automatically:
+- ✅ Collects all commits and changes
+- 📝 Generates comprehensive PR description
+- 🔗 Creates PR and returns the link
+- 🌐 Optionally opens PR in browser
+
+**[Full PR Workflow Guide →](docs/guides/pr-workflow.md)**
+
 ## 📊 Performance
 
 CollabCanvas is built for performance and scale:
