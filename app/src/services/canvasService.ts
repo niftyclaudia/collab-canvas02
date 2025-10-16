@@ -24,6 +24,7 @@ export interface Shape {
   width: number;
   height: number;
   color: string;
+  rotation?: number; // Rotation in degrees (0-360)
   createdBy: string;
   createdAt: Timestamp;
   lockedBy?: string | null;
@@ -39,6 +40,7 @@ export interface CreateShapeData {
   width: number;
   height: number;
   color: string;
+  rotation?: number; // Optional rotation field
   createdBy: string;
 }
 
@@ -49,6 +51,7 @@ export interface UpdateShapeData {
   width?: number;
   height?: number;
   color?: string;
+  rotation?: number;
   lockedBy?: string | null;
   lockedAt?: Timestamp | null;
 }
@@ -77,6 +80,7 @@ class CanvasService {
       
       const shape: Omit<Shape, 'id'> = {
         ...shapeData,
+        rotation: shapeData.rotation ?? 0, // Default to 0 if not provided
         createdAt: now,
         updatedAt: now,
         lockedBy: null,
@@ -403,6 +407,24 @@ class CanvasService {
     });
 
     console.log('✅ Shape resized successfully:', shapeId, `${width}×${height}`);
+  }
+
+  /**
+   * Rotate a shape with angle normalization
+   * @param shapeId - The ID of the shape to rotate
+   * @param rotation - Rotation angle in degrees (will be normalized to 0-360)
+   */
+  async rotateShape(shapeId: string, rotation: number): Promise<void> {
+    // Normalize rotation to 0-360 range
+    const normalizedRotation = ((rotation % 360) + 360) % 360;
+    
+    const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+    await updateDoc(shapeRef, {
+      rotation: normalizedRotation,
+      updatedAt: serverTimestamp()
+    });
+    
+    console.log(`✅ Shape ${shapeId} rotated to ${normalizedRotation}°`);
   }
 }
 
