@@ -382,8 +382,35 @@ class CanvasService {
     
     return { x, y, width, height };
   }
+
+  /**
+   * Resize a shape with validation
+   * @param shapeId - The ID of the shape to resize
+   * @param width - New width (must be >= 10px)
+   * @param height - New height (must be >= 10px)
+   */
+  async resizeShape(shapeId: string, width: number, height: number): Promise<void> {
+    // Validate minimum dimensions
+    if (width < 10 || height < 10) {
+      throw new Error('Minimum size is 10×10 pixels');
+    }
+    
+    const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+    await updateDoc(shapeRef, {
+      width: width,
+      height: height,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Shape resized successfully:', shapeId, `${width}×${height}`);
+  }
 }
 
 // Export singleton instance
 export const canvasService = new CanvasService();
 export default canvasService;
+
+// Expose to window for console testing (development only)
+if (typeof window !== 'undefined') {
+  (window as any).canvasService = canvasService;
+}

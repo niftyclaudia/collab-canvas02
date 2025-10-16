@@ -29,6 +29,10 @@ export const SHAPE_COLORS = {
 // Shape color array for easier iteration in toolbar
 export const SHAPE_COLOR_VALUES = Object.values(SHAPE_COLORS);
 
+// Shape size constraints
+export const MIN_SHAPE_WIDTH = 10;
+export const MIN_SHAPE_HEIGHT = 10;
+
 // Performance constants
 export const CURSOR_UPDATE_THROTTLE = 33; // ~30 FPS
 export const SHAPE_SYNC_TIMEOUT = 100; // 100ms target for shape operations

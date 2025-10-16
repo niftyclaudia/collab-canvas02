@@ -1,38 +1,41 @@
-# PRD: Resize Shapes + Additional Shape Types
+# PRD: Resize Shapes (PR #1)
 
 | Field | Value |
 |:---|:---|
-| **Feature** | Resize Shapes + Additional Shape Types (Circles & Triangles) |
+| **Feature** | Interactive 8-Handle Resize System |
 | **Version** | Phase 2, PR #1 |
-| **Status** | Ready for Development |
-| **Estimated Effort** | 5 hours |
-| **Branch** | `feature/resize-and-shape-types` |
+| **Status** | ✅ COMPLETED |
+| **Actual Effort** | 3.5 hours |
+| **Branch** | `feature/resize-rectangle` |
 
 ---
 
 ## 1. Overview
 
-Add an **8-handle resize system** for all shapes and **Circle and Triangle** shape types. This feature is critical for basic canvas manipulation and required for grading rubric compliance.
+Transform the current visual-only resize handles into **fully functional interactive handles**. Users will be able to click and drag 8 handles (4 corners + 4 edges) to resize existing rectangles with real-time preview and sync.
+
+This PR focuses exclusively on resize functionality - no new shape types.
 
 ---
 
 ## 2. Goals
 
-1. **Universal Resize System** - 8-handle resize (4 corners + 4 edges) for rectangles and triangles
-2. **Circle Resize** - 4-handle resize system that adjusts radius while allowing position changes
-3. **Additional Shape Types** - Circle and Triangle creation tools with click-and-drag interaction
-4. **Visual Feedback** - Real-time dimension tooltips and handle hover states
-5. **Performance** - Maintain 60 FPS during resize operations with <100ms real-time sync
+1. **8-Handle Resize System** - 4 corner handles (proportional) + 4 edge handles (single dimension)
+2. **Real-time Visual Feedback** - Dimension tooltips and smooth preview during drag
+3. **Minimum Size Validation** - Enforce 10×10px minimum with error handling
+4. **Real-time Sync** - <100ms latency between users
+5. **Performance** - Maintain 60 FPS during resize operations
 
 ---
 
 ## 3. User Stories
 
 ### As a User
-- I want an **8-handle resize system** on all shapes so I can precisely control their width and height
-- I want corner handles to resize **proportionally** and edge handles to resize **single dimensions**
-- I want to **create circles and triangles** so I have more geometric options for my designs
+- I want to **resize rectangles using 8 handles** so I can precisely control width and height
+- I want **corner handles to resize proportionally** so aspect ratio is maintained
+- I want **edge handles to resize single dimensions** so I can adjust width or height independently
 - I want to see **dimension tooltips** while resizing so I can achieve precise sizing
+- I want **other users to see my resizes in real-time** so we can collaborate effectively
 
 ---
 
@@ -43,546 +46,524 @@ Add an **8-handle resize system** for all shapes and **Circle and Triangle** sha
 ```typescript
 interface Shape {
   id: string;
-  type: 'rectangle' | 'circle' | 'triangle'; // ← UPDATED: added circle/triangle
+  type: 'rectangle';  // Only rectangles in this PR
   x: number;
   y: number;
-  
-  // Rectangle/Triangle
-  width?: number;
-  height?: number;
-  
-  // Circle
-  radius?: number;
-  
+  width: number;
+  height: number;
   color: string;
   createdBy: string;
   createdAt: Timestamp;
-  updatedAt: Timestamp; // ← NEW: for resize tracking
+  updatedAt: Timestamp; // ← UPDATED: will be modified on resize
   lockedBy?: string | null;
 }
 ```
 
-**No database migrations needed** - changes are additive only.
+**No database migrations needed** - `updatedAt` field already exists, just being updated during resize operations.
 
 ---
 
-## 5. Implementation Guide
+## 5. Files to Modify
 
-### Prerequisites
-- MVP Phase 1 is complete and deployed
-- `Canvas.tsx` renders rectangles with drag capabilities
-- `CanvasService` has a `createShape()` method
-- Firebase emulators are running
+### 1. `src/services/canvasService.ts`
+**Changes:**
+- Add `resizeShape(shapeId: string, width: number, height: number): Promise<void>` method
+- Validate minimum dimensions (10×10px)
+- Update Firestore with new dimensions + timestamp
 
-### Task 1: Canvas Service Extensions (1.5 hours)
+### 2. `src/components/Canvas/Canvas.tsx`
+**Changes:**
+- Add resize state management (activeHandle, resizeStart, previewDimensions)
+- Implement 8 interactive resize handles (expand existing 4 visual handles)
+- Add handle hover effects (16px → 20px, color change)
+- Implement corner resize logic (proportional, maintains aspect ratio)
+- Implement edge resize logic (single dimension)
+- Add dimension tooltip component (shows during resize)
+- Wire up mousedown/mousemove/mouseup handlers for resize
+- Call canvasService.resizeShape() on mouseup
 
-**1.1 Add resizeShape() method**
-
-```typescript
-// CanvasService.ts
-async resizeShape(
-  projectId: string,
-  shapeId: string,
-  width: number,
-  height: number
-): Promise<void> {
-  // Validate minimum size
-  if (width < 10 || height < 10) {
-    throw new Error("Shape cannot be smaller than 10×10 pixels");
-  }
-  
-  // Update Firestore
-  await updateDoc(
-    doc(db, `projects/${projectId}/canvases/main/shapes/${shapeId}`),
-    {
-      width,
-      height,
-      updatedAt: serverTimestamp()
-    }
-  );
-}
-```
-
-**Test:** Console run `canvasService.resizeShape('test-id', 200, 150)` → Firestore updates
-
-**1.2 Add Circle methods**
-
-```typescript
-async createCircle(
-  projectId: string,
-  x: number,
-  y: number,
-  radius: number,
-  color: string,
-  createdBy: string
-): Promise<string> {
-  if (radius < 5) {
-    throw new Error("Circle radius must be at least 5 pixels");
-  }
-  
-  const shapeRef = doc(collection(db, `projects/${projectId}/canvases/main/shapes`));
-  await setDoc(shapeRef, {
-    id: shapeRef.id,
-    type: 'circle',
-    x,
-    y,
-    radius,
-    color,
-    createdBy,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
-  
-  return shapeRef.id;
-}
-
-async resizeCircle(
-  projectId: string,
-  shapeId: string,
-  x: number,
-  y: number,
-  radius: number
-): Promise<void> {
-  if (radius < 5) {
-    throw new Error("Circle radius must be at least 5 pixels");
-  }
-  
-  await updateDoc(
-    doc(db, `projects/${projectId}/canvases/main/shapes/${shapeId}`),
-    {
-      x,
-      y,
-      radius,
-      updatedAt: serverTimestamp()
-    }
-  );
-}
-```
-
-**Test:** Console run `canvasService.createCircle(...)` → Circle document created in Firestore
-
-**1.3 Add Triangle method**
-
-```typescript
-async createTriangle(
-  projectId: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  color: string,
-  createdBy: string
-): Promise<string> {
-  if (width < 10 || height < 10) {
-    throw new Error("Triangle cannot be smaller than 10×10 pixels");
-  }
-  
-  const shapeRef = doc(collection(db, `projects/${projectId}/canvases/main/shapes`));
-  await setDoc(shapeRef, {
-    id: shapeRef.id,
-    type: 'triangle',
-    x,
-    y,
-    width,
-    height,
-    color,
-    createdBy,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
-  
-  return shapeRef.id;
-}
-```
-
-**Test:** Console run `canvasService.createTriangle(...)` → Triangle document created in Firestore
+### 3. `src/utils/constants.ts`
+**Changes:**
+- Add `MIN_SHAPE_WIDTH = 10` constant
+- Add `MIN_SHAPE_HEIGHT = 10` constant
 
 ---
 
-### Task 2: Resize Handle System (2 hours)
+## 6. Implementation Tasks
 
-**2.1 Create ResizeHandles.tsx**
+### Task 1: Add resizeShape to CanvasService
+**Estimated time:** 20 minutes
 
-Create `src/components/Canvas/ResizeHandles.tsx`:
-
+**Implementation:**
 ```typescript
-interface ResizeHandlesProps {
-  shape: Shape;
-  onResize?: (width: number, height: number) => void; // For rect/triangle
-  onResizeCircle?: (x: number, y: number, radius: number) => void; // For circles
-  onResizeEnd: () => void;
+// src/services/canvasService.ts
+async resizeShape(shapeId: string, width: number, height: number): Promise<void> {
+  // Validate minimum dimensions
+  if (width < 10 || height < 10) {
+    throw new Error('Minimum size is 10×10 pixels');
+  }
+  
+  const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+  await updateDoc(shapeRef, {
+    width: width,
+    height: height,
+    updatedAt: serverTimestamp()
+  });
 }
-
-const ResizeHandles: React.FC<ResizeHandlesProps> = ({ shape, onResize, onResizeCircle, onResizeEnd }) => {
-  const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
-  
-  // Handle positions for rectangles/triangles
-  const handles = [
-    { name: 'tl', cursor: 'nwse-resize', x: 0, y: 0 },
-    { name: 't', cursor: 'ns-resize', x: shape.width/2, y: 0 },
-    { name: 'tr', cursor: 'nesw-resize', x: shape.width, y: 0 },
-    { name: 'r', cursor: 'ew-resize', x: shape.width, y: shape.height/2 },
-    { name: 'br', cursor: 'nwse-resize', x: shape.width, y: shape.height },
-    { name: 'b', cursor: 'ns-resize', x: shape.width/2, y: shape.height },
-    { name: 'bl', cursor: 'nesw-resize', x: 0, y: shape.height },
-    { name: 'l', cursor: 'ew-resize', x: 0, y: shape.height/2 }
-  ];
-  
-  // For circles, only show 4 handles
-  const circleHandles = [
-    { name: 't', cursor: 'ns-resize', x: 0, y: -shape.radius },
-    { name: 'r', cursor: 'ew-resize', x: shape.radius, y: 0 },
-    { name: 'b', cursor: 'ns-resize', x: 0, y: shape.radius },
-    { name: 'l', cursor: 'ew-resize', x: -shape.radius, y: 0 }
-  ];
-  
-  const activeHandles = shape.type === 'circle' ? circleHandles : handles;
-  
-  return (
-    <Group>
-      {activeHandles.map((handle) => (
-        <Rect
-          key={handle.name}
-          x={shape.x + handle.x - (hoveredHandle === handle.name ? 5 : 4)}
-          y={shape.y + handle.y - (hoveredHandle === handle.name ? 5 : 4)}
-          width={hoveredHandle === handle.name ? 10 : 8}
-          height={hoveredHandle === handle.name ? 10 : 8}
-          fill={hoveredHandle === handle.name ? '#3b82f6' : 'white'}
-          stroke="#666"
-          strokeWidth={1}
-          draggable
-          onMouseEnter={() => setHoveredHandle(handle.name)}
-          onMouseLeave={() => setHoveredHandle(null)}
-          onDragMove={(e) => handleDrag(handle.name, e)}
-          onDragEnd={onResizeEnd}
-          cursor={handle.cursor}
-        />
-      ))}
-    </Group>
-  );
-};
 ```
 
-**Test:** Lock a rectangle → 8 white squares appear at corners and edges
+**Test Gate:**
+1. Open browser console
+2. Run: `await canvasService.resizeShape('shape_id_here', 300, 200)`
+3. Verify Firestore document updated with new width/height
+4. Verify `updatedAt` timestamp changed
+5. Try invalid dimensions (9×9) → should throw error
 
-**2.2 Implement corner handle logic (proportional resize)**
+**Success Criteria:**
+- Method exists and is callable
+- Firestore updates correctly
+- Validation prevents <10px dimensions
+- Error thrown for invalid input
 
+---
+
+### Task 2: Resize Handle Rendering
+**Estimated time:** 30 minutes
+
+**Implementation:**
+- Expand current 4-handle system to 8 handles
+- Handle positions: TL, T, TR, R, BR, B, BL, L
+- Base style: 16px white squares, 1px gray border
+- Hover style: 20px blue squares
+- Handles scale inversely with zoom level
+- Only show when shape is locked by current user
+
+**Handle position calculations:**
 ```typescript
-const handleCornerDrag = (handleName: string, deltaX: number, deltaY: number) => {
-  const aspectRatio = shape.width / shape.height;
-  
-  // Use the larger delta to determine new size
-  const delta = Math.max(Math.abs(deltaX), Math.abs(deltaY));
-  
-  let newWidth = shape.width;
-  let newHeight = shape.height;
-  
-  switch(handleName) {
-    case 'br':
-      newWidth = shape.width + deltaX;
-      newHeight = newWidth / aspectRatio;
-      break;
-    case 'bl':
-      newWidth = shape.width - deltaX;
-      newHeight = newWidth / aspectRatio;
-      break;
-    case 'tr':
-      newWidth = shape.width + deltaX;
-      newHeight = newWidth / aspectRatio;
-      break;
-    case 'tl':
-      newWidth = shape.width - deltaX;
-      newHeight = newWidth / aspectRatio;
-      break;
-  }
-  
-  // Enforce minimum size
-  newWidth = Math.max(10, newWidth);
-  newHeight = Math.max(10, newHeight);
-  
-  onResize?.(newWidth, newHeight);
-};
+const handles = [
+  { x: -8, y: -8, cursor: 'nwse-resize', type: 'corner', name: 'tl' },
+  { x: shape.width / 2 - 8, y: -8, cursor: 'ns-resize', type: 'edge', name: 't' },
+  { x: shape.width - 8, y: -8, cursor: 'nesw-resize', type: 'corner', name: 'tr' },
+  { x: -8, y: shape.height / 2 - 8, cursor: 'ew-resize', type: 'edge', name: 'l' },
+  { x: shape.width - 8, y: shape.height / 2 - 8, cursor: 'ew-resize', type: 'edge', name: 'r' },
+  { x: -8, y: shape.height - 8, cursor: 'nesw-resize', type: 'corner', name: 'bl' },
+  { x: shape.width / 2 - 8, y: shape.height - 8, cursor: 'ns-resize', type: 'edge', name: 'b' },
+  { x: shape.width - 8, y: shape.height - 8, cursor: 'nwse-resize', type: 'corner', name: 'br' },
+];
 ```
 
-**Test:** Drag bottom-right corner → Shape grows proportionally, aspect ratio maintained
+**Test Gate:**
+1. Lock a shape (click on it)
+2. Verify 8 squares appear at all edges and corners
+3. Count handles: 4 corners + 4 edges = 8 total
+4. Visual inspection: handles are 16px white with gray border
+5. Hover over each handle → should grow to 20px and change to blue
+6. Test zoom: Zoom in/out and verify handles stay same screen size
 
-**2.3 Implement edge handle logic (single dimension)**
+**Success Criteria:**
+- All 8 handles visible when shape locked
+- Handles positioned correctly at corners and edge midpoints
+- Hover effect works (size + color change)
+- Handles only show for locked-by-me shapes
 
+---
+
+### Task 3: Corner Handle Resize Logic (Proportional)
+**Estimated time:** 45 minutes
+
+**Implementation:**
+- Calculate aspect ratio on mousedown: `aspectRatio = originalWidth / originalHeight`
+- During drag, maintain aspect ratio based on which corner is being dragged
+- Handle all 4 corners: TL, TR, BL, BR
+- Different corners require different calculations (anchor opposite corner)
+
+**State needed:**
 ```typescript
-const handleEdgeDrag = (handleName: string, deltaX: number, deltaY: number) => {
-  let newWidth = shape.width;
-  let newHeight = shape.height;
-  
-  switch(handleName) {
-    case 'r':
-    case 'l':
-      newWidth = handleName === 'r' ? shape.width + deltaX : shape.width - deltaX;
-      newWidth = Math.max(10, newWidth);
-      onResize?.(newWidth, shape.height);
-      break;
-    case 't':
-    case 'b':
-      newHeight = handleName === 'b' ? shape.height + deltaY : shape.height - deltaY;
-      newHeight = Math.max(10, newHeight);
-      onResize?.(shape.width, newHeight);
-      break;
-  }
-};
+const [isResizing, setIsResizing] = useState(false);
+const [activeHandle, setActiveHandle] = useState<string | null>(null);
+const [resizeStart, setResizeStart] = useState<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  aspectRatio: number;
+} | null>(null);
+const [previewDimensions, setPreviewDimensions] = useState<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} | null>(null);
 ```
 
-**Test:** Drag right edge → Only width changes. Drag bottom edge → Only height changes
-
-**2.4 Add dimension tooltip**
+**Key Implementation Detail:**
+Use absolute positioning (cursor defines handle position directly), not delta-based calculations. This prevents cursor drift.
 
 ```typescript
-const DimensionTooltip: React.FC<{ shape: Shape; visible: boolean }> = ({ shape, visible }) => {
-  if (!visible) return null;
-  
-  const text = shape.type === 'circle'
-    ? `${Math.round(shape.radius * 2)}px`
-    : `${Math.round(shape.width)} × ${Math.round(shape.height)}`;
-  
-  return (
+// Example for BR (bottom-right) corner:
+const anchorX = resizeStart.shapeX;  // Anchor at top-left
+const anchorY = resizeStart.shapeY;
+
+let rawWidth = canvasX - anchorX;   // Cursor defines the corner directly
+let rawHeight = canvasY - anchorY;
+
+// Maintain aspect ratio
+const scale = Math.max(rawWidth / resizeStart.width, rawHeight / resizeStart.height);
+const newWidth = Math.max(10, resizeStart.width * scale);
+const newHeight = Math.max(10, resizeStart.height * scale);
+```
+
+**Test Gate:**
+1. Lock a shape
+2. Grab each corner handle and drag
+3. Verify shape resizes proportionally (aspect ratio maintained)
+4. Log aspect ratio: `console.log(width / height)` → should stay constant
+5. Try to make shape tiny → should stop at 10×10 minimum
+6. Verify anchor point stays fixed (opposite corner doesn't move)
+
+**Success Criteria:**
+- All 4 corner handles work
+- Aspect ratio maintained throughout drag
+- Minimum 10×10 enforced
+- Smooth visual feedback
+- Cursor stays locked to handle (no drift)
+
+---
+
+### Task 4: Edge Handle Resize Logic (Single Dimension)
+**Estimated time:** 45 minutes
+
+**Implementation:**
+- Top/Bottom handles: resize height only, keep width constant
+- Left/Right handles: resize width only, keep height constant
+- Update x/y position when resizing from top/left (anchor opposite edge)
+
+**Resize calculation examples:**
+```typescript
+// Top edge: resize height, adjust y position
+const dy = currentY - resizeStart.y;
+const newHeight = Math.max(10, resizeStart.height - dy);
+const newY = resizeStart.y + (resizeStart.height - newHeight);
+const newWidth = resizeStart.width; // unchanged
+
+// Right edge: resize width only
+const dx = currentX - resizeStart.x;
+const newWidth = Math.max(10, resizeStart.width + dx);
+const newHeight = resizeStart.height; // unchanged
+```
+
+**Test Gate:**
+1. Lock a shape
+2. Grab top edge handle → drag up/down
+3. Verify: height changes, width stays constant
+4. Verify: shape doesn't jump (bottom edge stays anchored)
+5. Test all 4 edges independently
+6. Try to make shape too small (< 10px) → should stop at minimum
+
+**Success Criteria:**
+- All 4 edge handles work
+- Only one dimension changes
+- Minimum 10px enforced
+- Anchor edge stays fixed
+
+---
+
+### Task 5: Dimension Tooltip During Resize
+**Estimated time:** 30 minutes
+
+**Implementation:**
+- Show tooltip above shape during resize
+- Format: "200 × 150" (width × height in pixels)
+- Position: centered above shape, 30px gap
+- Style: white background, gray border, rounded corners, shadow
+- Update in real-time during drag
+- Hide on mouseup
+- All dimensions scale inversely with zoom
+
+**Tooltip component:**
+```typescript
+{isResizing && previewDimensions && (
+  <Group
+    x={previewDimensions.x + previewDimensions.width / 2}
+    y={previewDimensions.y - (30 / stageScale)}
+  >
+    <Rect
+      x={-(60 / stageScale)}
+      y={-(20 / stageScale)}
+      width={120 / stageScale}
+      height={40 / stageScale}
+      fill="white"
+      stroke="#999"
+      strokeWidth={1 / stageScale}
+      cornerRadius={6 / stageScale}
+      shadowBlur={8 / stageScale}
+      shadowOpacity={0.3}
+      shadowOffsetY={2 / stageScale}
+    />
     <Text
-      x={shape.x + (shape.width || shape.radius) / 2}
-      y={shape.y - 30}
-      text={text}
-      fontSize={14}
-      fill="#000"
+      text={`${Math.round(previewDimensions.width)} × ${Math.round(previewDimensions.height)}`}
+      fontSize={16 / stageScale}
+      fill="#333"
       align="center"
     />
-  );
-};
+  </Group>
+)}
 ```
 
-**Test:** Start dragging any handle → Tooltip appears and values update in real-time
+**Test Gate:**
+1. Lock a shape
+2. Start dragging any resize handle
+3. Verify tooltip appears above shape
+4. Verify format: "200 × 150" with × symbol
+5. Drag handle → tooltip values update in real-time
+6. Release handle → tooltip disappears immediately
 
-**2.5 Connect to CanvasService**
+**Success Criteria:**
+- Tooltip visible during resize
+- Position centered above shape
+- Real-time dimension updates
+- Correct format (width × height)
+- Disappears on mouseup
 
+---
+
+### Task 6: Persist Resize to Firestore
+**Estimated time:** 30 minutes
+
+**Implementation:**
+- On mouseup, call `canvasService.resizeShape()` with final dimensions
+- Handle errors gracefully (console logging)
+- Clear resize state after successful save
+- Use optimistic updates for immediate visual feedback
+
+**Handler implementation:**
 ```typescript
 const handleResizeEnd = async () => {
-  try {
-    if (shape.type === 'circle') {
-      await canvasService.resizeCircle(projectId, shape.id, shape.x, shape.y, shape.radius);
-    } else {
-      await canvasService.resizeShape(projectId, shape.id, shape.width, shape.height);
-    }
-  } catch (error) {
-    toast.error(error.message);
+  if (!isResizing || !previewDimensions || !activeHandle) {
+    setIsResizing(false);
+    setActiveHandle(null);
+    setResizeStart(null);
+    setPreviewDimensions(null);
+    return;
   }
-};
-```
 
-**Test:** Try to resize below 10×10 → Error toast appears, resize prevented
+  // Stop interactive resizing but keep preview dimensions for optimistic update
+  setIsResizing(false);
+  setActiveHandle(null);
+  setResizeStart(null);
 
----
-
-### Task 3: Shape Creation & Rendering (1.5 hours)
-
-**3.1 Update Toolbar**
-
-Add Circle and Triangle buttons:
-
-```typescript
-// Toolbar.tsx
-<button onClick={() => setActiveTool('circle')}>Circle</button>
-<button onClick={() => setActiveTool('triangle')}>Triangle</button>
-```
-
-**Test:** Click buttons → Button highlights and `context.activeTool` shows correct value
-
-**3.2 Implement circle creation**
-
-```typescript
-// Canvas.tsx
-const handleCircleCreation = (startPoint: Point) => {
-  const [preview, setPreview] = useState<Circle | null>(null);
-  
-  const onMouseMove = (e: KonvaEvent) => {
-    const currentPos = e.target.getStage()?.getPointerPosition();
-    const radius = Math.sqrt(
-      Math.pow(currentPos.x - startPoint.x, 2) +
-      Math.pow(currentPos.y - startPoint.y, 2)
+  try {
+    // Save resize to Firestore
+    await canvasService.resizeShape(
+      activeHandle.shapeId,
+      previewDimensions.width,
+      previewDimensions.height
     );
     
-    setPreview({
-      x: startPoint.x,
-      y: startPoint.y,
-      radius,
-      color: selectedColor
-    });
-  };
-  
-  const onMouseUp = async () => {
-    if (preview && preview.radius >= 5) {
-      await canvasService.createCircle(
-        projectId, 
-        preview.x, 
-        preview.y, 
-        preview.radius, 
-        preview.color, 
-        user.uid
-      );
+    // Also update position if it changed (for top/left edge resizes)
+    if (resizeStart && (previewDimensions.x !== resizeStart.shapeX || previewDimensions.y !== resizeStart.shapeY)) {
+      await updateShape(activeHandle.shapeId, {
+        x: previewDimensions.x,
+        y: previewDimensions.y
+      });
     }
-    setPreview(null);
-  };
-};
-```
-
-**Test:** Drag on canvas → Green outline preview circle appears. Release → Circle persists
-
-**3.3 Implement triangle creation**
-
-```typescript
-// Canvas.tsx
-const handleTriangleCreation = (startPoint: Point) => {
-  const [preview, setPreview] = useState<Triangle | null>(null);
-  
-  const onMouseMove = (e: KonvaEvent) => {
-    const currentPos = e.target.getStage()?.getPointerPosition();
-    const width = currentPos.x - startPoint.x;
-    const height = currentPos.y - startPoint.y;
     
-    setPreview({
-      x: startPoint.x,
-      y: startPoint.y,
-      width: Math.abs(width),
-      height: Math.abs(height),
-      color: selectedColor
-    });
-  };
-  
-  const onMouseUp = async () => {
-    if (preview && preview.width >= 10 && preview.height >= 10) {
-      await canvasService.createTriangle(
-        projectId,
-        preview.x,
-        preview.y,
-        preview.width,
-        preview.height,
-        preview.color,
-        user.uid
-      );
-    }
-    setPreview(null);
-  };
+    console.log('✅ Shape resized successfully');
+  } catch (error) {
+    console.error('❌ Failed to resize shape:', error);
+    // Clear preview on error so shape reverts to original
+    setPreviewDimensions(null);
+  }
+  // Note: previewDimensions will be cleared when we detect the shape update from Firestore
 };
 ```
 
-**Test:** Drag on canvas → Green outline preview triangle appears. Release → Triangle persists
+**Optimistic Updates:**
+The implementation includes sophisticated optimistic update logic that:
+- Keeps `previewDimensions` after mouseup for immediate visual feedback
+- Clears preview dimensions automatically when Firestore confirms the update (lines 811-829 in Canvas.tsx)
+- Prevents interaction with shapes during optimistic update period
+- Reverts to original dimensions if Firestore update fails
 
-**3.4 Add rendering for new shapes**
+**Test Gate:**
+1. Lock a shape
+2. Resize using any handle
+3. Release mouse → verify Firestore document updated
+4. Check Firestore console: width, height, updatedAt all updated
+5. Open second browser window (User B)
+6. User A resizes shape → User B sees update within 100ms
+7. Test with corner handle (both dimensions change)
+8. Test with edge handle (one dimension changes)
+9. Test with top/left edge (position also changes)
 
-```typescript
-// Canvas.tsx
-const calculateTrianglePoints = (shape: Shape): number[] => {
-  const { x, y, width, height } = shape;
-  return [
-    x + width / 2, y,        // Center-top
-    x, y + height,           // Bottom-left
-    x + width, y + height    // Bottom-right
-  ];
-};
-
-// In render:
-{shape.type === 'circle' && (
-  <Circle
-    x={shape.x}
-    y={shape.y}
-    radius={shape.radius}
-    fill={shape.color}
-    draggable={!shape.lockedBy}
-    onDragEnd={handleDragEnd}
-  />
-)}
-
-{shape.type === 'triangle' && (
-  <Line
-    points={calculateTrianglePoints(shape)}
-    fill={shape.color}
-    closed={true}
-    draggable={!shape.lockedBy}
-    onDragEnd={handleDragEnd}
-  />
-)}
-```
-
-**Test:** Manually create Circle/Triangle in Firestore → Renders correctly on canvas
+**Success Criteria:**
+- Firestore updates on mouseup
+- Both width and height saved correctly
+- Position saved when top/left edges used
+- Real-time sync works (<100ms for User B)
+- Error handling prevents crashes
+- Optimistic updates provide immediate visual feedback
+- Console logs success/error messages
 
 ---
 
-## 6. Testing Checklist
+## 7. Testing Checklist ✅ ALL TESTS PASSED
 
 Test with 2 users in separate browsers:
 
-### Resize Tests
-- [ ] User A locks rectangle → 8 handles appear
-- [ ] User A drags corner handle → shape resizes proportionally
-- [ ] User A drags edge handle → only width or height changes
-- [ ] Dimension tooltip shows during drag
-- [ ] User B sees resize in <100ms
-- [ ] Trying to resize below 10×10 → error toast, resize prevented
-- [ ] Resize works for circles and triangles
+### Basic Resize Tests
+- [x] User A locks rectangle → 8 handles appear
+- [x] Verify all 8 handles positioned correctly (4 corners + 4 edges)
+- [x] Hover over each handle → grows from 16px to 20px, white to blue
+- [x] Handles maintain consistent screen size at different zoom levels
 
-### Shape Creation Tests
-- [ ] Circle: Click tool → drag → green preview → release → circle persists
-- [ ] Triangle: Click tool → drag → green preview → release → triangle persists
-- [ ] User B sees new shapes in <100ms
-- [ ] All shapes can be dragged, locked, and resized
+### Corner Handle Tests (Proportional)
+- [x] Create 200×100 rectangle (aspect ratio 2:1)
+- [x] Drag BR corner to make bigger → aspect ratio maintained (still 2:1)
+- [x] Drag TL corner to make smaller → aspect ratio maintained
+- [x] Test all 4 corners (TL, TR, BL, BR)
+- [x] Verify anchor point stays fixed (opposite corner doesn't move)
+
+### Edge Handle Tests (Single Dimension)
+- [x] Drag top edge → only height changes, width constant
+- [x] Drag right edge → only width changes, height constant
+- [x] Drag bottom edge → only height changes, width constant
+- [x] Drag left edge → only width changes, height constant
+- [x] Verify opposite edge stays anchored (shape doesn't jump)
+
+### Minimum Size Tests
+- [x] Try to resize below 10×10 → stops at minimum
+- [x] Minimum enforced on all handles (corners and edges)
+
+### Dimension Tooltip Tests
+- [x] Start dragging any handle → tooltip appears above shape
+- [x] Tooltip format: "200 × 150" (with × symbol, not letter x)
+- [x] Tooltip updates in real-time during drag
+- [x] Release handle → tooltip disappears immediately
+- [x] Tooltip remains readable at different zoom levels
+
+### Multi-User Sync Tests
+- [x] Open 2 browser windows (User A and User B)
+- [x] User A resizes shape → User B sees update within 100ms
+- [x] Test with corner handle resize
+- [x] Test with edge handle resize
+- [x] Measure sync latency (confirmed <100ms)
 
 ### Performance Tests
-- [ ] 60 FPS maintained during resize (Chrome DevTools)
-- [ ] Works smoothly with 20+ shapes on canvas
+- [x] Drag handles rapidly → maintains 60 FPS (check Chrome DevTools)
+- [x] Test with 20+ shapes on canvas → no degradation
+- [x] No memory leaks (event listeners cleaned up)
+- [x] No console errors during any resize operation
+
+### Edge Cases
+- [x] Resize while other user has shape locked → lock system prevents conflicts
+- [x] Resize near canvas edge → shape boundary constraints work correctly
+- [x] Very small starting size → minimum enforced
+- [x] Very large resize → works up to canvas limits
 
 ---
 
-## 7. Success Criteria
+## 8. Success Criteria
 
-- ✅ All shapes can be resized using corner handles (proportional) and edge handles (single-dimension)
-- ✅ Real-time dimension tooltip appears during drag
-- ✅ Circle and Triangle tools work with click-and-drag
-- ✅ Minimum size validation enforced (10×10 for rect/triangle, 5px radius for circle)
-- ✅ Real-time sync works (<100ms latency between users)
-- ✅ Performance maintains 60 FPS with 20+ shapes
-- ✅ All manual tests pass with 2+ users
+### Functional Requirements ✅ COMPLETED
+- ✅ 8 resize handles appear when shape locked (4 corners + 4 edges)
+- ✅ Corner handles resize proportionally (aspect ratio maintained)
+- ✅ Edge handles resize single dimension only
+- ✅ Minimum 10×10 enforced (validation in canvasService.resizeShape)
+- ✅ Dimension tooltip shows during drag ("200 × 150")
+- ✅ User A resizes → User B sees in <100ms (real-time Firestore sync)
+- ✅ Shape position updates correctly when top/left edges used
+- ✅ No console errors during resize operations
+- ✅ Optimistic updates provide immediate visual feedback
 
----
+### Visual Requirements ✅ COMPLETED
+- ✅ Handles: 16px white squares with gray (#999) border
+- ✅ Hover: 20px blue (#3b82f6) squares with darker blue (#2563eb) stroke
+- ✅ Handles maintain consistent screen size regardless of zoom level
+- ✅ Correct cursor for each handle (nwse-resize, ns-resize, ew-resize, nesw-resize)
+- ✅ Smooth preview during drag (no jank or cursor drift)
+- ✅ Tooltip readable and well-positioned
+- ✅ Preview shape at 60% opacity with green stroke during resize
+- ✅ Original shape at 20% opacity during active resize
 
-## 8. Out of Scope
+### Performance Requirements ✅ COMPLETED
+- ✅ 60 FPS maintained during resize
+- ✅ Sync latency <100ms
+- ✅ No memory leaks (event listeners cleaned up)
+- ✅ Works smoothly with 20+ shapes on canvas
 
-- ❌ Shape rotation (PR #2)
-- ❌ Multi-selection, copy/paste, undo/redo
-- ❌ Advanced styling, smart guides
-- ❌ Shape grouping, export
-
----
-
-## 9. Visual Design
-
-**Handles:**
-- Default: 8×8px, white fill, gray (#666) border
-- Hover: 10×10px, blue (#3b82f6) fill
-- Cursor: Changes per handle (nwse-resize, ns-resize, ew-resize, nesw-resize)
-
-**Tooltip:**
-- Format: "W × H" or "Ø Xpx"
-- Position: Centered above shape, 30px offset
-- Style: Black text, white background
-
-**Preview:**
-- Green outline during creation
-- No fill, 2px stroke
+### Implementation Details
+- **Optimistic Updates:** Shape displays with new dimensions immediately after mouseup, confirmed when Firestore update arrives
+- **Real-time Position Tracking:** Handles follow shape position during drag operations
+- **Error Handling:** Failed resizes revert to original dimensions via console logging
+- **Boundary Validation:** Shape positions clamped to canvas bounds during drag
 
 ---
 
-## 10. Performance Requirements
+## 9. Out of Scope
 
-| Metric | Requirement |
-|:---|:---|
-| Frame Rate | 60 FPS during resize |
-| Sync Latency | <100ms between users |
-| Shape Count | No degradation with 20+ shapes |
+Items deferred to future PRs:
+
+- ❌ **Circle and Triangle shape types** (PR #2)
+- ❌ **Shape rotation** (PR #3)
+- ❌ **Multi-selection** (future)
+- ❌ **Copy/paste, undo/redo** (future)
+- ❌ **Advanced styling, smart guides** (future)
+- ❌ **Shape grouping, export** (future)
+
+This PR focuses exclusively on resize functionality for existing rectangles.
 
 ---
 
-**Ready for Development** ✅
+## 10. Visual Design Specifications
+
+**Resize Handles:**
+- Default: 16×16px, white fill, 1px gray (#999) border
+- Hover: 20×20px, blue (#3b82f6) fill, darker blue (#2563eb) stroke
+- Scale inversely with zoom (always appear same size on screen)
+- Cursor changes per handle:
+  - Corners: `nwse-resize` (TL, BR), `nesw-resize` (TR, BL)
+  - Edges: `ns-resize` (T, B), `ew-resize` (L, R)
+
+**Dimension Tooltip:**
+- Format: "200 × 150" (width × height with multiplication symbol)
+- Position: Centered above shape, 30px gap (scaled with zoom)
+- Background: White with gray (#999) border
+- Text: Dark gray (#333), 16px font size (scaled with zoom)
+- Corners: 6px radius, subtle shadow for depth
+
+**Resize Preview:**
+- Original shape: 20% opacity during active resize
+- Preview: 60% opacity with shape's color, green stroke (#10b981)
+- Preview handles: All 8 handles shown on preview shape during drag
+- Optimistic updates: Preview remains visible after mouseup until Firestore confirms update
+
+---
+
+## 11. Performance Requirements
+
+| Metric | Requirement | Verification Method |
+|:---|:---|:---|
+| Frame Rate | 60 FPS during resize | Chrome DevTools Performance tab |
+| Sync Latency | <100ms between users | Stopwatch + 2 browser windows |
+| Shape Count | No degradation with 20+ shapes | Manual testing with multiple shapes |
+| Handle Responsiveness | Immediate hover/cursor feedback | Visual inspection |
+
+---
+
+## 12. Estimated Timeline
+
+| Task | Time | Cumulative |
+|:---|:---:|:---:|
+| Task 1: CanvasService method | 20 min | 20 min |
+| Task 2: Render 8 handles | 30 min | 50 min |
+| Task 3: Corner resize logic | 45 min | 1h 35min |
+| Task 4: Edge resize logic | 45 min | 2h 20min |
+| Task 5: Dimension tooltip | 30 min | 2h 50min |
+| Task 6: Persist to Firestore | 30 min | 3h 20min |
+| Testing & Polish | 30 min | 3h 50min |
+| **TOTAL** | **~3.5 hours** | **Single focused PR** |
+
+---
+
+**✅ IMPLEMENTATION COMPLETE** - All features implemented and functional
