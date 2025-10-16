@@ -330,24 +330,42 @@ class CanvasService {
    */
   async clearCanvas(): Promise<void> {
     try {
+      console.log('🗑️ Starting clearCanvas operation...');
+      console.log('🗑️ Collection path:', this.shapesCollectionPath);
+      
       const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
+      console.log('🗑️ Fetching shapes to delete...');
+      
       const querySnapshot = await getDocs(shapesCollectionRef);
+      console.log('🗑️ Found shapes:', querySnapshot.docs.length);
       
       if (querySnapshot.empty) {
         console.log('✅ Canvas is already empty');
         return;
       }
 
+      // Log shape IDs being deleted
+      const shapeIds = querySnapshot.docs.map(doc => doc.id);
+      console.log('🗑️ Shape IDs to delete:', shapeIds);
+
       // Use batch to delete all shapes efficiently
       const batch = writeBatch(firestore);
       querySnapshot.docs.forEach((doc) => {
+        console.log('🗑️ Adding to batch delete:', doc.id);
         batch.delete(doc.ref);
       });
 
+      console.log('🗑️ Committing batch delete...');
       await batch.commit();
       console.log('✅ Canvas cleared successfully:', querySnapshot.docs.length, 'shapes deleted');
+      console.log('✅ Batch commit completed');
     } catch (error) {
       console.error('❌ Error clearing canvas:', error);
+      console.error('❌ Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        code: (error as any)?.code,
+        name: (error as any)?.name,
+      });
       throw error;
     }
   }
@@ -364,8 +382,35 @@ class CanvasService {
     
     return { x, y, width, height };
   }
+
+  /**
+   * Resize a shape with validation
+   * @param shapeId - The ID of the shape to resize
+   * @param width - New width (must be >= 10px)
+   * @param height - New height (must be >= 10px)
+   */
+  async resizeShape(shapeId: string, width: number, height: number): Promise<void> {
+    // Validate minimum dimensions
+    if (width < 10 || height < 10) {
+      throw new Error('Minimum size is 10×10 pixels');
+    }
+    
+    const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+    await updateDoc(shapeRef, {
+      width: width,
+      height: height,
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Shape resized successfully:', shapeId, `${width}×${height}`);
+  }
 }
 
 // Export singleton instance
 export const canvasService = new CanvasService();
 export default canvasService;
+
+// Expose to window for console testing (development only)
+if (typeof window !== 'undefined') {
+  (window as any).canvasService = canvasService;
+}

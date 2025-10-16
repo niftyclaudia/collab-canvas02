@@ -62,54 +62,36 @@ class CursorService {
   subscribeToCursors(callback: (cursors: CursorUpdate[]) => void): () => void {
     const cursorsRef = ref(database, 'sessions/main/users');
     
-    console.log('🎯 CURSOR: Setting up cursor subscription to path:', cursorsRef.toString());
-    
     const handleCursorUpdates = (snapshot: any) => {
       const users = snapshot.val();
-      console.log('🎯 CURSOR: Raw cursor snapshot received:', users);
-      console.log('🎯 CURSOR: Full RTDB structure for cursors:', JSON.stringify(users, null, 2));
       
       if (!users) {
-        console.log('🎯 CURSOR: No users data, calling callback with empty array');
         callback([]);
         return;
       }
 
       const cursors: CursorUpdate[] = [];
       Object.entries(users).forEach(([userId, userData]: [string, any]) => {
-        console.log(`🎯 CURSOR: Processing user ${userId}:`, userData);
         if (userData?.cursor) {
-          console.log(`✅ CURSOR: User ${userId} has cursor data:`, userData.cursor);
           cursors.push({
             userId,
             cursor: userData.cursor,
           });
-        } else {
-          console.log(`❌ CURSOR: User ${userId} missing cursor data`);
         }
       });
 
-      console.log('📤 CURSOR: Sending cursor updates (total: ' + cursors.length + '):', cursors);
       callback(cursors);
     };
 
-    // Set up the listener
-    console.log('🎯 CURSOR: Adding onValue listener to RTDB');
-    console.log('🎯 CURSOR: Listener path:', cursorsRef.toString());
-    
     const unsubscribe = onValue(cursorsRef, handleCursorUpdates, (error) => {
-      console.error('❌ CURSOR: Subscription error:', error);
-      console.error('❌ CURSOR: Error details:', JSON.stringify(error, null, 2));
+      console.error('Cursor subscription error:', error);
     });
     
     // Store unsubscribe function for cleanup
     this.listeners[cursorsRef.key || 'cursors'] = unsubscribe;
-    
-    console.log('✅ CURSOR: Listener set up successfully');
 
     // Return cleanup function
     return () => {
-      console.log('🎯 CURSOR: Cleaning up cursor subscription');
       unsubscribe();
       delete this.listeners[cursorsRef.key || 'cursors'];
     };
@@ -171,14 +153,11 @@ class CursorService {
       const snapshot = await get(usersRef);
       
       if (!snapshot.exists()) {
-        console.log('🧹 CURSOR: No users data to cleanup');
         return;
       }
 
       const users = snapshot.val();
       const cleanupPromises: Promise<void>[] = [];
-      
-      console.log('🧹 CURSOR: Cleaning up stale cursor data...');
       
       Object.entries(users).forEach(([userId, userData]: [string, any]) => {
         const hasCursor = userData?.cursor;
@@ -186,19 +165,15 @@ class CursorService {
         
         // If user has cursor data but no valid presence, clean up the cursor
         if (hasCursor && !hasValidPresence) {
-          console.log(`🧹 CURSOR: Removing stale cursor for user ${userId} (${userData.cursor.username})`);
           cleanupPromises.push(this.removeCursor(userId));
         }
       });
       
       if (cleanupPromises.length > 0) {
         await Promise.all(cleanupPromises);
-        console.log(`✅ CURSOR: Cleaned up ${cleanupPromises.length} stale cursors`);
-      } else {
-        console.log('✅ CURSOR: No stale cursors found to cleanup');
       }
     } catch (error) {
-      console.error('❌ CURSOR: Error during cursor cleanup:', error);
+      console.error('Error during cursor cleanup:', error);
     }
   }
 

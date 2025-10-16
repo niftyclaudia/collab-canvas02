@@ -68,6 +68,33 @@ if [ "$COMMIT_COUNT" -eq 0 ]; then
     exit 1
 fi
 
+# Deploy to Vercel for preview
+echo -e "${BLUE}🚀 Deploying to Vercel for preview...${NC}\n"
+cd app
+
+# Run Vercel deployment and capture output
+VERCEL_OUTPUT=$(npx vercel --yes 2>&1)
+VERCEL_EXIT_CODE=$?
+
+if [ $VERCEL_EXIT_CODE -eq 0 ]; then
+    # Extract the preview URL from output
+    PREVIEW_URL=$(echo "$VERCEL_OUTPUT" | grep -o 'https://[^[:space:]]*\.vercel\.app' | head -1)
+    
+    if [ -n "$PREVIEW_URL" ]; then
+        echo -e "${GREEN}✅ Vercel deployment successful!${NC}"
+        echo -e "${BLUE}🔗 Preview URL:${NC} $PREVIEW_URL\n"
+    else
+        echo -e "${YELLOW}⚠️  Vercel deployed but couldn't extract URL${NC}"
+        PREVIEW_URL=""
+    fi
+else
+    echo -e "${YELLOW}⚠️  Vercel deployment failed or skipped${NC}"
+    echo -e "${YELLOW}   You can deploy manually later with: cd app && npx vercel${NC}\n"
+    PREVIEW_URL=""
+fi
+
+cd ..
+
 # Generate PR title from branch name
 PR_TITLE=$(echo "$CURRENT_BRANCH" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
 
@@ -80,6 +107,18 @@ PR_BODY_FILE=$(mktemp)
     echo ""
     echo "This PR includes changes from the \`$CURRENT_BRANCH\` branch."
     echo ""
+    
+    # Add Vercel preview link if available
+    if [ -n "$PREVIEW_URL" ]; then
+        echo "## 🌐 Live Preview"
+        echo ""
+        echo "🚀 **Preview Deployment:** [$PREVIEW_URL]($PREVIEW_URL)"
+        echo ""
+        echo "> 💡 Test the live deployment before merging!"
+        echo ""
+        echo "---"
+        echo ""
+    fi
     echo "## 🔄 Commits ($COMMIT_COUNT)"
     echo ""
     git log "origin/$TARGET_BRANCH..$CURRENT_BRANCH" --pretty=format:"- **%s** (%h)" --reverse

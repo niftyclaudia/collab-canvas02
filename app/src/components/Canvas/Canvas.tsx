@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
-import { Stage, Layer, Rect, Line, Text } from 'react-konva';
+import { Stage, Layer, Rect, Line, Text, Group } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type Konva from 'konva';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
@@ -11,6 +11,42 @@ import type { Shape } from '../../services/canvasService';
 
 export function Canvas() {
   const stageRef = useRef<any>(null);
+  
+  // Resize handle hover state
+  const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
+  
+  // Track shape node refs for real-time position updates during drag
+  const shapeNodesRef = useRef<Map<string, Konva.Rect>>(new Map());
+  
+  // Force re-render trigger for smooth handle updates
+  const [, setUpdateTrigger] = useState(0);
+  const forceUpdate = useCallback(() => {
+    setUpdateTrigger(prev => prev + 1);
+  }, []);
+  
+  // Resize state management
+  const [isResizing, setIsResizing] = useState(false);
+  const [activeHandle, setActiveHandle] = useState<{
+    shapeId: string;
+    handleType: 'corner' | 'edge';
+    handleName: string;
+  } | null>(null);
+  const [resizeStart, setResizeStart] = useState<{
+    cursorX: number;
+    cursorY: number;
+    shapeX: number;
+    shapeY: number;
+    width: number;
+    height: number;
+    aspectRatio: number;
+  } | null>(null);
+  const [previewDimensions, setPreviewDimensions] = useState<{
+    shapeId: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   
   // Canvas state hook for shapes and drawing
   const { 
@@ -155,7 +191,10 @@ export function Canvas() {
     
     stage.position(newPos);
     stage.batchDraw();
-  }, [getDistance, getCenter]);
+    
+    // Force React re-render for smooth handle size updates
+    forceUpdate();
+  }, [getDistance, getCenter, forceUpdate]);
 
   const handleTouchEnd = useCallback((event: Event) => {
     const e = event as TouchEvent;
@@ -249,10 +288,13 @@ export function Canvas() {
     stage.position(newPos);
     stage.batchDraw();
 
+    // Force React re-render for smooth handle size updates
+    forceUpdate();
+
     // Reset accumulated delta and clear animation frame
     accumulatedDeltaRef.current = 0;
     animationFrameRef.current = null;
-  }, []);
+  }, [forceUpdate]);
 
   const handleWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -309,6 +351,9 @@ export function Canvas() {
       
       stage.position(newPos);
       stage.batchDraw();
+      
+      // Force React re-render for smooth handle size updates
+      forceUpdate();
     } else {
       // Handle regular wheel scrolling with smoothing
       accumulatedDeltaRef.current += deltaY;
@@ -329,7 +374,7 @@ export function Canvas() {
         animationFrameRef.current = requestAnimationFrame(performSmoothZoom);
       }, 16); // ~60fps
     }
-  }, [isGesturing, performSmoothZoom]);
+  }, [isGesturing, performSmoothZoom, forceUpdate]);
 
   const handleDragEnd = useCallback((_e: KonvaEventObject<DragEvent>) => {
     const stage = stageRef.current;
@@ -389,7 +434,10 @@ export function Canvas() {
       node.x(clampedPosition.x);
       node.y(clampedPosition.y);
     }
-  }, []);
+    
+    // Force React re-render for smooth handle position updates
+    forceUpdate();
+  }, [forceUpdate]);
 
   const handleShapeDragEnd = useCallback(async (e: KonvaEventObject<DragEvent>, shape: Shape) => {
     const node = e.target as Konva.Rect;
@@ -427,6 +475,247 @@ export function Canvas() {
       node.y(shape.y);
     }
   }, [updateShape, unlockShape]);
+
+  // Resize handle mousedown - start resize
+  const handleResizeStart = useCallback((e: KonvaEventObject<MouseEvent>, shape: Shape, handleType: 'corner' | 'edge', handleName: string) => {
+    e.cancelBubble = true; // Prevent shape drag
+    
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+    
+    // Convert screen coordinates to canvas coordinates
+    const canvasPos = {
+      x: (pos.x - stage.x()) / stage.scaleX(),
+      y: (pos.y - stage.y()) / stage.scaleY(),
+    };
+    
+    // Get real-time shape position
+    const shapeNode = shapeNodesRef.current.get(shape.id);
+    const shapeX = shapeNode ? shapeNode.x() : shape.x;
+    const shapeY = shapeNode ? shapeNode.y() : shape.y;
+    
+    setIsResizing(true);
+    setActiveHandle({ shapeId: shape.id, handleType, handleName });
+    setResizeStart({
+      cursorX: canvasPos.x,
+      cursorY: canvasPos.y,
+      shapeX: shapeX,
+      shapeY: shapeY,
+      width: shape.width,
+      height: shape.height,
+      aspectRatio: shape.width / shape.height,
+    });
+    setPreviewDimensions({
+      shapeId: shape.id,
+      x: shapeX,
+      y: shapeY,
+      width: shape.width,
+      height: shape.height,
+    });
+  }, []);
+
+  // Resize handle mousemove - update preview
+  const handleResizeMove = useCallback((_e: KonvaEventObject<MouseEvent>) => {
+    if (!isResizing || !resizeStart || !activeHandle) return;
+    
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+    
+    // Convert screen coordinates to canvas coordinates
+    const canvasX = (pos.x - stage.x()) / stage.scaleX();
+    const canvasY = (pos.y - stage.y()) / stage.scaleY();
+    
+    // Extract handle direction from name (e.g., "shape_123-br" -> "br")
+    const direction = activeHandle.handleName.split('-').pop() || '';
+    
+    if (activeHandle.handleType === 'corner') {
+      // Corner resize - maintain aspect ratio, cursor locks to handle
+      let anchorX: number, anchorY: number;
+      let rawWidth: number, rawHeight: number;
+      
+      switch (direction) {
+        case 'br': // Bottom-right: anchor top-left
+          anchorX = resizeStart.shapeX;
+          anchorY = resizeStart.shapeY;
+          rawWidth = canvasX - anchorX;
+          rawHeight = canvasY - anchorY;
+          break;
+        case 'bl': // Bottom-left: anchor top-right
+          anchorX = resizeStart.shapeX + resizeStart.width;
+          anchorY = resizeStart.shapeY;
+          rawWidth = anchorX - canvasX;
+          rawHeight = canvasY - anchorY;
+          break;
+        case 'tr': // Top-right: anchor bottom-left
+          anchorX = resizeStart.shapeX;
+          anchorY = resizeStart.shapeY + resizeStart.height;
+          rawWidth = canvasX - anchorX;
+          rawHeight = anchorY - canvasY;
+          break;
+        case 'tl': // Top-left: anchor bottom-right
+          anchorX = resizeStart.shapeX + resizeStart.width;
+          anchorY = resizeStart.shapeY + resizeStart.height;
+          rawWidth = anchorX - canvasX;
+          rawHeight = anchorY - canvasY;
+          break;
+        default:
+          return;
+      }
+      
+      // Maintain aspect ratio - use the larger dimension
+      const scaleFromWidth = Math.abs(rawWidth) / resizeStart.width;
+      const scaleFromHeight = Math.abs(rawHeight) / resizeStart.height;
+      const scale = Math.max(scaleFromWidth, scaleFromHeight);
+      
+      // Calculate new dimensions maintaining aspect ratio
+      let newWidth = resizeStart.width * scale;
+      let newHeight = resizeStart.height * scale;
+      
+      // Enforce minimum size
+      newWidth = Math.max(10, newWidth);
+      newHeight = Math.max(10, newHeight);
+      
+      // Maintain aspect ratio after minimum enforcement
+      if (newWidth < resizeStart.width * scale) {
+        newHeight = newWidth / resizeStart.aspectRatio;
+      }
+      if (newHeight < resizeStart.height * scale) {
+        newWidth = newHeight * resizeStart.aspectRatio;
+      }
+      
+      // Calculate new position based on anchor point
+      let newX: number, newY: number;
+      
+      switch (direction) {
+        case 'br':
+          newX = anchorX;
+          newY = anchorY;
+          break;
+        case 'bl':
+          newX = anchorX - newWidth;
+          newY = anchorY;
+          break;
+        case 'tr':
+          newX = anchorX;
+          newY = anchorY - newHeight;
+          break;
+        case 'tl':
+          newX = anchorX - newWidth;
+          newY = anchorY - newHeight;
+          break;
+        default:
+          return;
+      }
+      
+      setPreviewDimensions({
+        shapeId: activeHandle.shapeId,
+        x: newX,
+        y: newY,
+        width: newWidth,
+        height: newHeight,
+      });
+    } else if (activeHandle.handleType === 'edge') {
+      // Edge resize - single dimension only
+      let newX = resizeStart.shapeX;
+      let newY = resizeStart.shapeY;
+      let newWidth = resizeStart.width;
+      let newHeight = resizeStart.height;
+      
+      switch (direction) {
+        case 't': // Top edge: resize height, adjust y position
+          {
+            const anchorY = resizeStart.shapeY + resizeStart.height; // Anchor bottom
+            newHeight = anchorY - canvasY;
+            newHeight = Math.max(10, newHeight);
+            newY = anchorY - newHeight;
+          }
+          break;
+        case 'b': // Bottom edge: resize height only
+          {
+            const anchorY = resizeStart.shapeY; // Anchor top
+            newHeight = canvasY - anchorY;
+            newHeight = Math.max(10, newHeight);
+            newY = anchorY;
+          }
+          break;
+        case 'l': // Left edge: resize width, adjust x position
+          {
+            const anchorX = resizeStart.shapeX + resizeStart.width; // Anchor right
+            newWidth = anchorX - canvasX;
+            newWidth = Math.max(10, newWidth);
+            newX = anchorX - newWidth;
+          }
+          break;
+        case 'r': // Right edge: resize width only
+          {
+            const anchorX = resizeStart.shapeX; // Anchor left
+            newWidth = canvasX - anchorX;
+            newWidth = Math.max(10, newWidth);
+            newX = anchorX;
+          }
+          break;
+        default:
+          return;
+      }
+      
+      setPreviewDimensions({
+        shapeId: activeHandle.shapeId,
+        x: newX,
+        y: newY,
+        width: newWidth,
+        height: newHeight,
+      });
+    }
+    
+    // Force re-render for smooth updates
+    forceUpdate();
+  }, [isResizing, resizeStart, activeHandle, forceUpdate]);
+
+  // Resize handle mouseup - finish resize and persist to Firestore
+  const handleResizeEnd = useCallback(async () => {
+    if (!isResizing || !previewDimensions || !activeHandle) {
+      setIsResizing(false);
+      setActiveHandle(null);
+      setResizeStart(null);
+      setPreviewDimensions(null);
+      return;
+    }
+
+    // Stop interactive resizing but keep preview dimensions for optimistic update
+    setIsResizing(false);
+    setActiveHandle(null);
+    setResizeStart(null);
+
+    try {
+      // Save resize to Firestore
+      await canvasService.resizeShape(
+        activeHandle.shapeId,
+        previewDimensions.width,
+        previewDimensions.height
+      );
+      
+      // Also update position if it changed (for top/left edge resizes)
+      if (resizeStart && (previewDimensions.x !== resizeStart.shapeX || previewDimensions.y !== resizeStart.shapeY)) {
+        await updateShape(activeHandle.shapeId, {
+          x: previewDimensions.x,
+          y: previewDimensions.y
+        });
+      }
+      
+      console.log('✅ Shape resized successfully');
+    } catch (error) {
+      console.error('❌ Failed to resize shape:', error);
+      // Clear preview on error so shape reverts to original
+      setPreviewDimensions(null);
+    }
+    // Note: previewDimensions will be cleared when we detect the shape update from Firestore
+  }, [isResizing, previewDimensions, activeHandle, resizeStart, updateShape]);
 
   // Background click handler (deselect + drawing)
   const handleStageClick = useCallback((e: KonvaEventObject<MouseEvent>) => {
@@ -469,7 +758,14 @@ export function Canvas() {
     }
   }, [mode, selectedShapeId, startDrawing, unlockShape]);
 
-  const handleMouseMove = useCallback((_e: KonvaEventObject<MouseEvent>) => {
+  const handleMouseMove = useCallback((e: KonvaEventObject<MouseEvent>) => {
+    // Handle resize if active
+    if (isResizing) {
+      handleResizeMove(e);
+      return;
+    }
+    
+    // Handle drawing
     if (!drawingState.isDrawing) return;
     
     const stage = stageRef.current;
@@ -485,12 +781,19 @@ export function Canvas() {
     };
     
     updateDrawing(canvasPos.x, canvasPos.y);
-  }, [drawingState.isDrawing, updateDrawing]);
+  }, [isResizing, handleResizeMove, drawingState.isDrawing, updateDrawing]);
 
   const handleMouseUp = useCallback(() => {
+    // Handle resize end if active
+    if (isResizing) {
+      handleResizeEnd();
+      return;
+    }
+    
+    // Handle drawing
     if (!drawingState.isDrawing) return;
     finishDrawing();
-  }, [drawingState.isDrawing, finishDrawing]);
+  }, [isResizing, handleResizeEnd, drawingState.isDrawing, finishDrawing]);
 
   // Cancel drawing on Escape key
   useEffect(() => {
@@ -503,6 +806,27 @@ export function Canvas() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [drawingState.isDrawing, cancelDrawing]);
+
+  // Clear preview dimensions once Firestore update is confirmed
+  useEffect(() => {
+    if (!previewDimensions || isResizing) return;
+    
+    // Find the shape that was resized
+    const shape = shapes.find(s => s.id === previewDimensions.shapeId);
+    if (!shape) return;
+    
+    // Check if the shape dimensions match the preview (within 1px tolerance for rounding)
+    const dimensionsMatch = 
+      Math.abs(shape.width - previewDimensions.width) < 1 &&
+      Math.abs(shape.height - previewDimensions.height) < 1 &&
+      Math.abs(shape.x - previewDimensions.x) < 1 &&
+      Math.abs(shape.y - previewDimensions.y) < 1;
+    
+    if (dimensionsMatch) {
+      console.log('✅ Firestore update confirmed, clearing preview dimensions');
+      setPreviewDimensions(null);
+    }
+  }, [shapes, previewDimensions, isResizing]);
 
   return (
     <div className="canvas-container">
@@ -577,22 +901,58 @@ export function Canvas() {
                 opacity = 0.5;
               }
               
+              // Check if we have optimistic preview dimensions for this shape
+              const hasOptimisticUpdate = !isResizing && previewDimensions && 
+                                         !activeHandle && shape.id === previewDimensions.shapeId;
+              
+              // Make original shape semi-transparent during active resize
+              const isBeingResized = isResizing && activeHandle?.shapeId === shape.id;
+              if (isBeingResized) {
+                opacity = 0.2;
+                isDraggable = false; // Can't drag while resizing
+              }
+              
+              // Use optimistic dimensions if available, otherwise use DB values
+              let displayWidth = shape.width;
+              let displayHeight = shape.height;
+              let displayX = shape.x;
+              let displayY = shape.y;
+              
+              if (hasOptimisticUpdate) {
+                displayWidth = previewDimensions.width;
+                displayHeight = previewDimensions.height;
+                displayX = previewDimensions.x;
+                displayY = previewDimensions.y;
+              } else {
+                // Get real-time position from node (for handles during drag)
+                const shapeNode = shapeNodesRef.current.get(shape.id);
+                displayX = shapeNode ? shapeNode.x() : shape.x;
+                displayY = shapeNode ? shapeNode.y() : shape.y;
+              }
+              
               return (
                 <React.Fragment key={shape.id}>
                   <Rect
-                    x={shape.x}
-                    y={shape.y}
-                    width={shape.width}
-                    height={shape.height}
+                    ref={(node) => {
+                      if (node) {
+                        shapeNodesRef.current.set(shape.id, node);
+                      } else {
+                        shapeNodesRef.current.delete(shape.id);
+                      }
+                    }}
+                    x={hasOptimisticUpdate ? displayX : shape.x}
+                    y={hasOptimisticUpdate ? displayY : shape.y}
+                    width={displayWidth}
+                    height={displayHeight}
                     fill={shape.color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
                     opacity={opacity}
-                    draggable={isDraggable}
+                    draggable={isDraggable && !hasOptimisticUpdate}
                     onClick={(e) => handleShapeClick(e, shape)}
                     onDragMove={(e) => handleShapeDragMove(e, shape)}
                     onDragEnd={(e) => handleShapeDragEnd(e, shape)}
-                    listening={lockStatus !== 'locked-by-other'} // Disable interaction if locked by other
+                    listening={lockStatus !== 'locked-by-other' && !hasOptimisticUpdate} // Disable interaction if locked by other or has optimistic update
                   />
                   
                   {/* Lock icon for shapes locked by others */}
@@ -605,6 +965,51 @@ export function Canvas() {
                       listening={false} // Icon shouldn't capture events
                     />
                   )}
+                  
+                  {/* Resize handles - only show for shapes locked by current user */}
+                  {lockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && (() => {
+                    const stage = stageRef.current;
+                    const stageScale = stage ? stage.scaleX() : 1;
+                    
+                    // Handle size scales inversely with zoom for consistent screen size
+                    const baseSize = 16 / stageScale;
+                    const hoverSize = 20 / stageScale;
+                    const offset = baseSize / 2;
+                    
+                    // Define 8 resize handles using display position and dimensions (4 corners + 4 edges)
+                    const handles = [
+                      { x: displayX - offset, y: displayY - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
+                      { x: displayX + displayWidth / 2 - offset, y: displayY - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
+                      { x: displayX + displayWidth - offset, y: displayY - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-tr` },
+                      { x: displayX - offset, y: displayY + displayHeight / 2 - offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
+                      { x: displayX + displayWidth - offset, y: displayY + displayHeight / 2 - offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
+                      { x: displayX - offset, y: displayY + displayHeight - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-bl` },
+                      { x: displayX + displayWidth / 2 - offset, y: displayY + displayHeight - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
+                      { x: displayX + displayWidth - offset, y: displayY + displayHeight - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-br` },
+                    ];
+                    
+                    return handles.map((handle) => {
+                      const isHovered = hoveredHandle === handle.name;
+                      const handleSize = isHovered ? hoverSize : baseSize;
+                      
+                      return (
+                        <Rect
+                          key={handle.name}
+                          x={handle.x}
+                          y={handle.y}
+                          width={handleSize}
+                          height={handleSize}
+                          fill={isHovered ? '#3b82f6' : 'white'}
+                          stroke={isHovered ? '#2563eb' : '#999'}
+                          strokeWidth={1 / stageScale}
+                          onMouseEnter={() => setHoveredHandle(handle.name)}
+                          onMouseLeave={() => setHoveredHandle(null)}
+                          onMouseDown={(e) => handleResizeStart(e, shape, handle.type, handle.name)}
+                          listening={true}
+                        />
+                      );
+                    });
+                  })()}
                 </React.Fragment>
               );
             })}
@@ -623,6 +1028,92 @@ export function Canvas() {
                 dash={[10, 5]}
               />
             )}
+            
+            {/* Render preview during resize */}
+            {isResizing && previewDimensions && activeHandle && (() => {
+              const resizingShape = shapes.find(s => s.id === activeHandle.shapeId);
+              if (!resizingShape) return null;
+              
+              const stage = stageRef.current;
+              const stageScale = stage ? stage.scaleX() : 1;
+              const baseSize = 16 / stageScale;
+              const offset = baseSize / 2;
+              
+              // Define 8 resize handles for preview
+              const previewHandles = [
+                { x: previewDimensions.x - offset, y: previewDimensions.y - offset },
+                { x: previewDimensions.x + previewDimensions.width / 2 - offset, y: previewDimensions.y - offset },
+                { x: previewDimensions.x + previewDimensions.width - offset, y: previewDimensions.y - offset },
+                { x: previewDimensions.x - offset, y: previewDimensions.y + previewDimensions.height / 2 - offset },
+                { x: previewDimensions.x + previewDimensions.width - offset, y: previewDimensions.y + previewDimensions.height / 2 - offset },
+                { x: previewDimensions.x - offset, y: previewDimensions.y + previewDimensions.height - offset },
+                { x: previewDimensions.x + previewDimensions.width / 2 - offset, y: previewDimensions.y + previewDimensions.height - offset },
+                { x: previewDimensions.x + previewDimensions.width - offset, y: previewDimensions.y + previewDimensions.height - offset },
+              ];
+              
+              return (
+                <React.Fragment>
+                  {/* Preview shape */}
+                  <Rect
+                    x={previewDimensions.x}
+                    y={previewDimensions.y}
+                    width={previewDimensions.width}
+                    height={previewDimensions.height}
+                    fill={resizingShape.color}
+                    opacity={0.6}
+                    stroke="#10b981"
+                    strokeWidth={3}
+                    listening={false}
+                  />
+                  
+                  {/* Preview handles */}
+                  {previewHandles.map((handle, idx) => (
+                    <Rect
+                      key={`preview-handle-${idx}`}
+                      x={handle.x}
+                      y={handle.y}
+                      width={baseSize}
+                      height={baseSize}
+                      fill="white"
+                      stroke="#999"
+                      strokeWidth={1 / stageScale}
+                      listening={false}
+                    />
+                  ))}
+                  
+                  {/* Dimension tooltip */}
+                  <Group
+                    x={previewDimensions.x + previewDimensions.width / 2}
+                    y={previewDimensions.y - (30 / stageScale)}
+                  >
+                    <Rect
+                      x={-(60 / stageScale)}
+                      y={-(20 / stageScale)}
+                      width={120 / stageScale}
+                      height={40 / stageScale}
+                      fill="white"
+                      stroke="#999"
+                      strokeWidth={1 / stageScale}
+                      cornerRadius={6 / stageScale}
+                      shadowBlur={8 / stageScale}
+                      shadowOpacity={0.3}
+                      shadowOffsetY={2 / stageScale}
+                      listening={false}
+                    />
+                    <Text
+                      x={-(60 / stageScale)}
+                      y={-(10 / stageScale)}
+                      width={120 / stageScale}
+                      text={`${Math.round(previewDimensions.width)} × ${Math.round(previewDimensions.height)}`}
+                      fontSize={16 / stageScale}
+                      fill="#333"
+                      align="center"
+                      listening={false}
+                    />
+                  </Group>
+                </React.Fragment>
+              );
+            })()}
           </Layer>
         </Stage>
         

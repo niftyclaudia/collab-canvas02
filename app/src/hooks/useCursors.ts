@@ -21,8 +21,6 @@ export function useCursors(stageRef: React.RefObject<any>) {
   const throttledUpdateRef = useRef<((x: number, y: number) => void) & { cancel(): void } | null>(null);
   const isTrackingRef = useRef(false);
 
-  console.log('🚨 useCursors HOOK IS RUNNING - Updated version deployed!', { user: !!user, uid: user?.uid });
-
   // Create throttled update function
   useEffect(() => {
     if (!user) return;
@@ -54,22 +52,15 @@ export function useCursors(stageRef: React.RefObject<any>) {
   // Subscribe to remote cursors
   useEffect(() => {
     if (!user) {
-      console.log('🎯 useCursors: No user, not setting up cursor subscription');
       return;
     }
-
-    console.log('🎯 useCursors: Setting up cursor subscription for user:', user.uid);
     
     // Clean up any stale cursor data before subscribing
     cursorService.cleanupStaleCursors().catch((error) => {
-      console.error('❌ Failed to cleanup stale cursor data:', error);
+      console.error('Failed to cleanup stale cursor data:', error);
     });
     
     const unsubscribe = cursorService.subscribeToCursors((cursors: CursorUpdate[]) => {
-      console.log('🎯 useCursors: Received cursor updates:', cursors);
-      console.log('🎯 useCursors: Current user ID to filter out:', user.uid);
-      console.log('🎯 useCursors: Online users from presence:', onlineUsers.map(u => ({ userId: u.userId, username: u.username })));
-      
       // Create a Set of online user IDs for efficient lookup
       const onlineUserIds = new Set(onlineUsers.map(u => u.userId));
       
@@ -78,12 +69,6 @@ export function useCursors(stageRef: React.RefObject<any>) {
         .filter((cursor) => {
           const isNotMe = cursor.userId !== user.uid;
           const isOnline = onlineUserIds.has(cursor.userId);
-          
-          console.log(`🎯 useCursors: User ${cursor.userId} (${cursor.cursor.username}):`);
-          console.log(`  - isNotMe: ${isNotMe}`);
-          console.log(`  - isOnline: ${isOnline}`);
-          console.log(`  - passes filter: ${isNotMe && isOnline}`);
-          
           return isNotMe && isOnline;
         })
         .map((cursor) => ({
@@ -95,11 +80,9 @@ export function useCursors(stageRef: React.RefObject<any>) {
           timestamp: cursor.cursor.timestamp,
         }));
 
-      console.log('🎯 useCursors: Final remote cursors after presence validation:', remoteCursors);
       setRemoteCursors(remoteCursors);
     });
 
-    console.log('🎯 useCursors: Cursor subscription set up, unsubscribe function ready');
     return unsubscribe;
   }, [user, onlineUsers]);
 
