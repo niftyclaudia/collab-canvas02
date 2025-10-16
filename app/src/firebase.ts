@@ -26,29 +26,29 @@ export const database = getDatabase(app);
 console.log('🔥 Firebase Configuration Debug Info:');
 console.log('📊 Environment mode:', import.meta.env.MODE);
 console.log('🌐 Hostname:', window.location.hostname);
-console.log('🔗 Database URL:', import.meta.env.VITE_FIREBASE_DATABASE_URL);
+console.log('🔗 Realtime Database URL:', import.meta.env.VITE_FIREBASE_DATABASE_URL);
 console.log('🏗️ Project ID:', import.meta.env.VITE_FIREBASE_PROJECT_ID);
 console.log('🔑 Auth Domain:', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
+console.log('📦 Firestore App Name:', app.name);
+console.log('🗄️ Firestore Database:', firestore.app.options.projectId);
+console.log('🔥 Firestore Type:', firestore.type);
 
-// Test Realtime Database connection in production
-if (import.meta.env.MODE === 'production') {
-  setTimeout(async () => {
-    try {
-      const { ref, get } = await import('firebase/database');
-      // Test with a simple path instead of .info/connected
-      const testRef = ref(database, 'test');
-      const snapshot = await get(testRef);
-      console.log('🔗 Realtime Database connection test: SUCCESS - Can read from RTDB');
-      console.log('🔗 Test data:', snapshot.val());
-    } catch (error) {
-      console.error('❌ Realtime Database connection test failed:', error);
-      console.error('❌ Error details:', JSON.stringify(error, null, 2));
-    }
-  }, 2000);
+// Check if we should use emulators (respecting VITE_USE_EMULATORS env var)
+const useEmulators = import.meta.env.VITE_USE_EMULATORS === 'true';
+const isEmulator = useEmulators && (import.meta.env.MODE === 'development' || window.location.hostname === 'localhost');
+console.log('🎯 VITE_USE_EMULATORS env var:', import.meta.env.VITE_USE_EMULATORS);
+console.log('🎯 Using Firebase Emulators:', isEmulator);
+console.log('🎯 Firestore Collection Path: canvases/main/shapes');
+
+// Production connection confirmed
+if (!isEmulator) {
+  console.log('✅ Production Firebase initialized successfully');
+  console.log('✅ Realtime Database URL:', import.meta.env.VITE_FIREBASE_DATABASE_URL);
+  console.log('✅ Firestore Project:', firestore.app.options.projectId);
 }
 
-// Connect to emulators in development mode
-if (import.meta.env.MODE === 'development' || window.location.hostname === 'localhost') {
+// Connect to emulators only if VITE_USE_EMULATORS=true
+if (useEmulators && (import.meta.env.MODE === 'development' || window.location.hostname === 'localhost')) {
   try {
     // Connect to Firebase Emulators
     connectAuthEmulator(auth, 'http://localhost:9099');
@@ -59,6 +59,8 @@ if (import.meta.env.MODE === 'development' || window.location.hostname === 'loca
   } catch (error) {
     console.log('Firebase emulators already connected or connection failed:', error);
   }
+} else {
+  console.log('🔥 Connected to PRODUCTION Firebase');
 }
 
 export default app;

@@ -10,7 +10,7 @@
               ".write": "auth != null && (auth.uid == $userId || !data.exists())"
             },
             "presence": {
-              ".write": "auth != null && (auth.uid == $userId || !data.exists())"
+              ".write": "auth != null && (auth.uid == $userId || !data.exists() || (newData.child('online').val() == false && root.child('sessions/main/users/' + $userId + '/presence/lastSeen').val() < (now - 300000)))"
             }
           }
         }
