@@ -269,6 +269,9 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
           user!.uid
         );
       } else if (activeTool === 'triangle') {
+        // Use the same coordinates as the preview to ensure consistency
+        const { x, y, width, height } = drawingState.previewShape;
+        
         // Validate minimum size (10x10 pixels)
         if (width < 10 || height < 10) {
           console.log('Triangle too small, ignoring (minimum 10x10)');
@@ -293,6 +296,9 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         );
       } else {
         // Rectangle (existing logic)
+        // Use the same coordinates as the preview to ensure consistency
+        const { x, y, width, height } = drawingState.previewShape;
+        
         // Validate minimum size (10x10 pixels)
         if (width < 10 || height < 10) {
           console.log('Rectangle too small, ignoring (minimum 10x10)');
