@@ -238,20 +238,13 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       return;
     }
 
-    const { x, y, width, height } = drawingState.previewShape;
-
     try {
       if (activeTool === 'circle') {
-        // For circles, use the same bounding box logic as rectangles
-        const normalized = canvasService.normalizeRectangle(
-          drawingState.startPoint.x,
-          drawingState.startPoint.y,
-          drawingState.currentPoint.x,
-          drawingState.currentPoint.y
-        );
-
-        // Calculate circle properties from the bounding box (same as preview)
-        const size = Math.min(normalized.width, normalized.height);
+        // Use the same coordinates as the preview to ensure consistency
+        const { x, y, width, height } = drawingState.previewShape;
+        
+        // Calculate circle properties from the preview shape (same as preview)
+        const size = Math.min(width, height);
 
         // Validate minimum size (10px)
         if (size < 10) {
@@ -261,15 +254,15 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         }
 
         // Validate circle bounds
-        if (!canvasService.validateShapeBounds(normalized.x, normalized.y, size, size)) {
+        if (!canvasService.validateShapeBounds(x, y, size, size)) {
           console.log('Circle outside canvas bounds, ignoring');
           setDrawingState(initialDrawingState);
           return;
         }
 
         await canvasService.createCircle(
-          normalized.x,
-          normalized.y,
+          x,
+          y,
           size,
           size,
           selectedColor,

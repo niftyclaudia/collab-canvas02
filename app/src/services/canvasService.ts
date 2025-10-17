@@ -14,7 +14,6 @@ import {
 } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
-import { logger } from '../utils/logger';
 
 // Shape interface matching the data model from task.md
 export interface Shape {

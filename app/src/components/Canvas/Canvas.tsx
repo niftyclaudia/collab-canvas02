@@ -1437,8 +1437,8 @@ export function Canvas() {
                         shapeNodesRef.current.delete(shape.id);
                       }
                     }}
-                    x={hasOptimisticUpdate ? displayX + displayWidth / 2 : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2)}
-                    y={hasOptimisticUpdate ? displayY + displayHeight / 2 : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2)}
+                    x={hasOptimisticUpdate ? displayX + displayWidth / 2 : (shape.type === 'circle' ? shape.x + shape.width / 2 : shape.x + shape.width / 2)}
+                    y={hasOptimisticUpdate ? displayY + displayHeight / 2 : (shape.type === 'circle' ? shape.y + shape.height / 2 : shape.y + shape.height / 2)}
                     offsetX={0}
                     offsetY={0}
                     rotation={currentRotation}
