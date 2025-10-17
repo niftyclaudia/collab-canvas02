@@ -1,7 +1,7 @@
 export function getSystemPrompt(shapes: any[]): string {
   const shapesSummary = shapes.length > 0 
-    ? `\n\nCURRENT CANVAS STATE:\n${shapes.slice(0, 20).map(s => 
-        `- ${s.type} (id: ${s.id}): ${s.color || 'text'} at (${s.x}, ${s.y})${
+    ? `\n\nCURRENT CANVAS STATE (ordered by most recently modified first):\n${shapes.slice(0, 20).map((s, index) => 
+        `${index === 0 ? '→ MOST RECENTLY MODIFIED: ' : ''}- ${s.type} (id: ${s.id}): ${s.color || 'text'} at (${s.x}, ${s.y})${
           s.width ? `, size ${s.width}×${s.height}` : ''
         }${s.radius ? `, radius ${s.radius}` : ''
         }${s.rotation ? `, rotation ${s.rotation}°` : ''
@@ -66,8 +66,10 @@ ROTATION RULES:
 
 SHAPE IDENTIFICATION:
 - "the blue rectangle" → call getCanvasState, find shape with type="rectangle" and color="#3b82f6"
-- "these shapes" or "it" → identify by context (most recently created or mentioned)
-- If multiple matches, pick the most recently created one (highest createdAt timestamp)
+- "these shapes" or "it" → identify by context (most recently modified or mentioned)
+- CRITICAL: The canvas state below is ordered by most recently modified first - the FIRST shape in the list is the most recently modified
+- When user says "it", "that", or similar vague references, ALWAYS use the FIRST shape in the canvas state list
+- If multiple matches, pick the most recently modified one (first in the list)
 - If no match found, DO NOT make manipulation tool calls - instead return a clear error message explaining what you couldn't find
 
 CREATION EXAMPLES:
@@ -93,11 +95,11 @@ User: "Move the triangle to the center"
 → moveShape(shapeId: "shape_456", x: 2500, y: 2500)  // Exact center of 5000×5000 canvas
 
 User: "Move it to the top-left"
-→ Look at canvas state below, find most recent shape
+→ Look at canvas state below, use the FIRST shape (most recently modified)
 → moveShape(shapeId: "shape_123", x: 100, y: 100)
 
 User: "Make it twice as big"
-→ Look at canvas state below, find most recent shape, get current dimensions
+→ Look at canvas state below, use the FIRST shape (most recently modified), get current dimensions
 → If rectangle/triangle: resizeShape(shapeId: "shape_123", width: 400, height: 300)  // Doubled from 200×150
 → If circle: resizeShape(shapeId: "shape_123", radius: 150)  // Doubled from 75
 
@@ -106,12 +108,12 @@ User: "Make the circle bigger"
 → resizeShape(shapeId: "shape_456", radius: 112)  // 1.5x bigger (75 * 1.5 = 112)
 
 User: "Make it smaller"
-→ Look at canvas state below, find most recent shape, get current dimensions
+→ Look at canvas state below, use the FIRST shape (most recently modified), get current dimensions
 → If rectangle/triangle: resizeShape(shapeId: "shape_123", width: 100, height: 75)  // 0.5x smaller
 → If circle: resizeShape(shapeId: "shape_123", radius: 37)  // 0.5x smaller (75 * 0.5 = 37)
 
 User: "Rotate it 45 degrees"
-→ Look at canvas state below, find most recent/contextual shape, get current rotation
+→ Look at canvas state below, use the FIRST shape (most recently modified), get current rotation
 → Example: If canvas state shows "rectangle (id: shape_123): blue at (100, 100), size 200×150, rotation 0°"
 → Calculate: current rotation (0°) + requested rotation (45°) = 45°
 → Call: rotateShape(shapeId: "shape_123", rotation: 45)
@@ -127,7 +129,7 @@ User: "Duplicate the blue rectangle"
 → duplicateShape(shapeId: "shape_123")
 
 User: "Duplicate it"
-→ Look at canvas state below, find most recent/contextual shape
+→ Look at canvas state below, use the FIRST shape (most recently modified)
 → duplicateShape(shapeId: "shape_123")
 
 User: "Delete the red square"
@@ -135,7 +137,7 @@ User: "Delete the red square"
 → deleteShape(shapeId: "shape_456")
 
 User: "Delete that"
-→ Look at canvas state below, find most recent/contextual shape
+→ Look at canvas state below, use the FIRST shape (most recently modified)
 → deleteShape(shapeId: "shape_456")
 
 ERROR HANDLING EXAMPLES:
@@ -160,7 +162,7 @@ CONTEXT AWARENESS:
 
 User: "Create a yellow rectangle at 1000, 1000"
 User: "Make it bigger"
-→ Look at canvas state below, find yellow rectangle - it's the most recent
+→ Look at canvas state below, use the FIRST shape (yellow rectangle - most recently modified)
 → resizeShape(shapeId: "shape_123", width: 300, height: 225)
 
 User: "Create a blue circle and a red triangle"

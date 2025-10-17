@@ -156,7 +156,7 @@ export class CanvasService {
   async getShapes(): Promise<Shape[]> {
     try {
       const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
-      const shapesQuery = query(shapesCollectionRef, orderBy('createdAt', 'asc'));
+      const shapesQuery = query(shapesCollectionRef, orderBy('updatedAt', 'desc'));
       const querySnapshot = await getDocs(shapesQuery);
 
       const shapes: Shape[] = [];
@@ -181,7 +181,7 @@ export class CanvasService {
   subscribeToShapes(callback: (shapes: Shape[]) => void): () => void {
     try {
       const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
-      const shapesQuery = query(shapesCollectionRef, orderBy('createdAt', 'asc'));
+      const shapesQuery = query(shapesCollectionRef, orderBy('updatedAt', 'desc'));
 
       const unsubscribe = onSnapshot(
         shapesQuery,
