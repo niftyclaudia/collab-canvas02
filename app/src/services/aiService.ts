@@ -34,7 +34,7 @@ export class AIService {
         ],
         tools: this.getToolDefinitions(),
         tool_choice: "auto",
-        temperature: 0.7,
+        temperature: 0.1,
         max_tokens: 500
       });
       
@@ -121,14 +121,14 @@ export class AIService {
         );
         
       case 'createTriangle':
-        return await this.canvasService.createTriangle({
-          x: args.x,
-          y: args.y,
-          width: args.width,
-          height: args.height,
-          color: args.color,
-          createdBy: userId
-        });
+        return await this.canvasService.createTriangle(
+          args.x,
+          args.y,
+          args.width,
+          args.height,
+          args.color,
+          userId
+        );
         
       case 'createText':
         return await this.canvasService.createText(
