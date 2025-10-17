@@ -18,7 +18,7 @@ export interface DrawingState {
 export type CanvasMode = 'select' | 'create';
 
 // Shape tool types
-export type ShapeTool = 'rectangle' | 'circle' | 'triangle';
+export type ShapeTool = 'rectangle' | 'circle' | 'triangle' | 'text';
 
 export interface CanvasState {
   // Mode state

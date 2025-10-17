@@ -15,6 +15,7 @@ export function ColorToolbar() {
     { name: 'Rectangle', value: 'rectangle', icon: '🟥' },
     { name: 'Circle', value: 'circle', icon: '🔴' },
     { name: 'Triangle', value: 'triangle', icon: '🔺' },
+    { name: 'Text', value: 'text', icon: '📝' },
   ];
 
 

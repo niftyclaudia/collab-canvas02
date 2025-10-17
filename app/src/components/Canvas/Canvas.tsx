@@ -5,6 +5,8 @@ import type Konva from 'konva';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
 import { useCursors } from '../../hooks/useCursors';
 import { useCanvas } from '../../hooks/useCanvas';
+import { useToast } from '../../hooks/useToast';
+import { useAuth } from '../../hooks/useAuth';
 import { CursorLayer } from '../Collaboration/CursorLayer';
 import { canvasService } from '../../services/canvasService';
 import type { Shape } from '../../services/canvasService';
@@ -114,6 +116,12 @@ export function Canvas() {
     getShapeLockStatus,
     updateShape
   } = useCanvas();
+  
+  // Toast hook for error messages
+  const { showToast } = useToast();
+  
+  // Auth hook for user information
+  const { user } = useAuth();
   
   // Cursor tracking hook
   const { remoteCursors } = useCursors(stageRef);
@@ -1203,7 +1211,7 @@ export function Canvas() {
   }, [rotationState]);
 
   // Background click handler (deselect + drawing)
-  const handleStageClick = useCallback((e: KonvaEventObject<MouseEvent>) => {
+  const handleStageClick = useCallback(async (e: KonvaEventObject<MouseEvent>) => {
     // Simplified background detection - if we clicked on the stage itself or canvas background
     const targetClass = e.target.getClassName();
     const targetId = e.target.id();
@@ -1251,10 +1259,30 @@ export function Canvas() {
           return;
         }
         
-        startDrawing(canvasPos.x, canvasPos.y);
+        // Handle text creation immediately (no drawing state needed)
+        if (activeTool === 'text') {
+          try {
+            await canvasService.createText(
+              'TEXT',
+              canvasPos.x,
+              canvasPos.y,
+              16,
+              selectedColor,
+              'normal',
+              'normal',
+              'none',
+              user!.uid
+            );
+          } catch (error) {
+            console.error('Failed to create text:', error);
+            showToast('Failed to create text. Please try again.', 'error');
+          }
+        } else {
+          startDrawing(canvasPos.x, canvasPos.y);
+        }
       }
     }
-  }, [mode, selectedShapeId, startDrawing, unlockShape, setSelectedShapeId, forceUpdate]);
+  }, [mode, activeTool, selectedShapeId, selectedColor, startDrawing, unlockShape, setSelectedShapeId, forceUpdate, showToast, user]);
 
   const handleMouseMove = useCallback((e: KonvaEventObject<MouseEvent>) => {
     // Handle rotation if active
@@ -1591,8 +1619,28 @@ export function Canvas() {
                       );
                     })()}
                     
+                    {shape.type === 'text' && (
+                      <Text
+                        text={shape.text || 'TEXT'}
+                        x={-displayWidth / 2}
+                        y={-displayHeight / 2}
+                        width={displayWidth}
+                        height={displayHeight}
+                        fontSize={shape.fontSize || 16}
+                        fontFamily="Arial"
+                        fontStyle={shape.fontStyle || 'normal'}
+                        fontWeight={shape.fontWeight || 'normal'}
+                        textDecoration={shape.textDecoration || 'none'}
+                        fill={shape.color}
+                        opacity={opacity}
+                        listening={true}
+                        align="center"
+                        verticalAlign="middle"
+                      />
+                    )}
+                    
                     {/* Resize handles - inside the rotated group so they rotate with the shape */}
-                    {effectiveLockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
+                    {effectiveLockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && shape.type !== 'text' && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
