@@ -624,15 +624,11 @@ export class CanvasService {
     // Normalize rotation to 0-360 range
     const normalizedRotation = ((rotation % 360) + 360) % 360;
     
-    logger.canvas(`Rotating shape ${shapeId}: ${rotation}° → ${normalizedRotation}°`);
-    
     const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
     await updateDoc(shapeRef, {
       rotation: normalizedRotation,
       updatedAt: serverTimestamp()
     });
-    
-    logger.database(`Rotation saved to database for shape ${shapeId}`);
   }
 
   /**

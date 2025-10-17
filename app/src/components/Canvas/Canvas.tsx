@@ -1498,15 +1498,6 @@ export function Canvas() {
                       const handleColor = isHovered ? '#3b82f6' : '#ff0000'; // Bright red for maximum visibility
                       const iconColor = isHovered ? 'white' : 'white'; // White icon for better contrast
                       
-                      // Debug: Log exact coordinates
-                      console.log('📍 Rotation handle coordinates (local):', {
-                        handleY,
-                        distance: ROTATION_HANDLE_DISTANCE,
-                        shapeHeight: displayHeight,
-                        totalDistanceFromCenter: ROTATION_HANDLE_DISTANCE + (displayHeight / 2),
-                        handleSize,
-                        stageScale
-                      });
                       
                       return (
                         <React.Fragment key={`rotation-${shape.id}`}>
