@@ -11,6 +11,7 @@ import { CursorLayer } from '../Collaboration/CursorLayer';
 import { canvasService } from '../../services/canvasService';
 import type { Shape } from '../../services/canvasService';
 import { logger } from '../../utils/logger';
+import { ShapeControls } from './ShapeControls';
 
 // Constants for rotation handles
 const ROTATION_HANDLE_DISTANCE = 150; // Distance from shape top to rotation handle
@@ -57,6 +58,17 @@ export function Canvas() {
   
   // Track shape node refs for real-time position updates during drag
   const shapeNodesRef = useRef<Map<string, Konva.Group>>(new Map());
+  
+  // Controls panel state for delete/duplicate buttons
+  const [controlsPanel, setControlsPanel] = useState<{
+    isVisible: boolean;
+    shapeId: string | null;
+    position: { x: number; y: number };
+  }>({
+    isVisible: false,
+    shapeId: null,
+    position: { x: 0, y: 0 }
+  });
   
   // Force re-render trigger for smooth handle updates with throttling
   const [, setUpdateTrigger] = useState(0);
@@ -523,9 +535,15 @@ export function Canvas() {
       setSelectedShapeId(null);
       forceUpdate();
       
+      // Hide controls panel
+      setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
+      
       // Unlock in background
       unlockShape(shape.id).catch(error => {
-        console.error('Failed to unlock shape:', error);
+        // Only log if it's not a "document not found" error (shape was deleted)
+        if (!error.message?.includes('No document to update')) {
+          console.error('Failed to unlock shape:', error);
+        }
       });
       return;
     }
@@ -537,7 +555,10 @@ export function Canvas() {
       
       // Unlock previous shape in background
       unlockShape(selectedShapeId).catch(error => {
-        console.error('Failed to unlock previously selected shape:', error);
+        // Only log if it's not a "document not found" error (shape was deleted)
+        if (!error.message?.includes('No document to update')) {
+          console.error('Failed to unlock previously selected shape:', error);
+        }
       });
     }
     
@@ -555,7 +576,33 @@ export function Canvas() {
     forceUpdate();
     
     // Lock the shape in background (don't wait for it)
-    lockShape(shape.id).catch(error => {
+    lockShape(shape.id).then(() => {
+      // Show controls panel when shape is successfully locked
+      const stage = stageRef.current;
+      if (stage) {
+        const stagePos = stage.getAbsolutePosition();
+        const stageScale = stage.scaleX();
+        
+        // Calculate position above the shape
+        let shapeX, shapeY;
+        if (shape.type === 'circle') {
+          shapeX = shape.x;
+          shapeY = shape.y;
+        } else {
+          shapeX = shape.x + shape.width / 2;
+          shapeY = shape.y + shape.height / 2;
+        }
+        
+        setControlsPanel({
+          isVisible: true,
+          shapeId: shape.id,
+          position: {
+            x: (shapeX + stagePos.x) / stageScale,
+            y: (shapeY + stagePos.y) / stageScale - 50 // 50px above shape
+          }
+        });
+      }
+    }).catch(error => {
       console.error('Failed to lock shape:', error);
       // Keep shape selected even if lock fails - user can manually deselect
     });
@@ -1230,6 +1277,9 @@ export function Canvas() {
         // Clear selection immediately to hide selector
         setSelectedShapeId(null);
         
+        // Hide controls panel
+        setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
+        
         // Force a re-render to ensure selector disappears immediately
         forceUpdate();
         
@@ -1408,6 +1458,9 @@ export function Canvas() {
       // Clear selection immediately to hide selector
       setSelectedShapeId(null);
       
+      // Hide controls panel
+      setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
+      
       // Force a re-render to ensure selector disappears immediately
       forceUpdate();
       
@@ -1417,6 +1470,31 @@ export function Canvas() {
       });
     }
   }, [selectedShapeId, setSelectedShapeId, unlockShape, forceUpdate]);
+
+  // Handle delete shape
+  const handleDeleteShape = useCallback(async (shapeId: string) => {
+    try {
+      await canvasService.deleteShape(shapeId);
+      setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
+      showToast('Shape deleted', 'success');
+    } catch (error) {
+      console.error('Failed to delete shape:', error);
+      showToast('Failed to delete shape', 'error');
+    }
+  }, [showToast]);
+
+  // Handle duplicate shape
+  const handleDuplicateShape = useCallback(async (shapeId: string) => {
+    if (!user) return;
+    
+    try {
+      await canvasService.duplicateShape(shapeId, user.uid);
+      showToast('Shape duplicated', 'success');
+    } catch (error) {
+      console.error('Failed to duplicate shape:', error);
+      showToast('Failed to duplicate shape', 'error');
+    }
+  }, [user, showToast]);
 
   return (
     <div className="canvas-container">
@@ -2025,6 +2103,17 @@ export function Canvas() {
         
         {/* Cursor overlay layer */}
         <CursorLayer cursors={remoteCursors} stageRef={stageRef} />
+        
+        {/* Shape controls panel */}
+        {controlsPanel.isVisible && controlsPanel.shapeId && (
+          <ShapeControls
+            shapeId={controlsPanel.shapeId}
+            isVisible={controlsPanel.isVisible}
+            position={controlsPanel.position}
+            onDelete={handleDeleteShape}
+            onDuplicate={handleDuplicateShape}
+          />
+        )}
       </div>
     </div>
   );

@@ -330,6 +330,14 @@ export class CanvasService {
     try {
       const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
       
+      // Check if the document exists before trying to update it
+      const shapeDoc = await getDoc(shapeDocRef);
+      if (!shapeDoc.exists()) {
+        // Shape doesn't exist (probably deleted), so no need to unlock
+        console.log(`Shape ${shapeId} no longer exists, skipping unlock`);
+        return;
+      }
+      
       await updateDoc(shapeDocRef, {
         lockedBy: null,
         lockedAt: null,
@@ -657,23 +665,49 @@ export class CanvasService {
       
       const originalShape = shapeDoc.data() as Shape;
       
-      // Create duplicate with 20px offset
+      // Calculate new position with 20px offset, but handle canvas bounds
+      let newX = originalShape.x + 20;
+      let newY = originalShape.y + 20;
+      
+      // If the offset would put the shape outside bounds, wrap to (50, 50)
+      if (originalShape.type === 'circle') {
+        const radius = originalShape.radius || originalShape.width / 2;
+        if (!this.validateCircleBounds(newX, newY, radius)) {
+          newX = 50;
+          newY = 50;
+        }
+      } else {
+        if (!this.validateShapeBounds(newX, newY, originalShape.width, originalShape.height)) {
+          newX = 50;
+          newY = 50;
+        }
+      }
+      
+      // Create duplicate with calculated position
       const duplicateData: CreateShapeData = {
         type: originalShape.type,
-        x: originalShape.x + 20,
-        y: originalShape.y + 20,
+        x: newX,
+        y: newY,
         width: originalShape.width,
         height: originalShape.height,
-        radius: originalShape.radius,
         color: originalShape.color,
         rotation: originalShape.rotation || 0,
-        text: originalShape.text,
-        fontSize: originalShape.fontSize,
-        fontWeight: originalShape.fontWeight,
-        fontStyle: originalShape.fontStyle,
-        textDecoration: originalShape.textDecoration,
         createdBy: createdBy,
       };
+      
+      // Only add radius for circles
+      if (originalShape.type === 'circle' && originalShape.radius !== undefined) {
+        duplicateData.radius = originalShape.radius;
+      }
+      
+      // Only add text properties for text shapes
+      if (originalShape.type === 'text') {
+        if (originalShape.text !== undefined) duplicateData.text = originalShape.text;
+        if (originalShape.fontSize !== undefined) duplicateData.fontSize = originalShape.fontSize;
+        if (originalShape.fontWeight !== undefined) duplicateData.fontWeight = originalShape.fontWeight;
+        if (originalShape.fontStyle !== undefined) duplicateData.fontStyle = originalShape.fontStyle;
+        if (originalShape.textDecoration !== undefined) duplicateData.textDecoration = originalShape.textDecoration;
+      }
       
       return this.createShape(duplicateData);
     } catch (error) {
