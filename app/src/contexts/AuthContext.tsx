@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { authService, type User } from '../services/authService';
 import { presenceService } from '../services/presenceService';
@@ -38,6 +38,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
   }, []);
 
+  // Memoize the user object to prevent unnecessary re-renders and useEffect triggers
+  const memoizedUser = useMemo(() => {
+    if (!user) return null;
+    
+    // Create a stable reference by ensuring all properties are defined
+    return {
+      uid: user.uid,
+      email: user.email,
+      username: user.username,
+      cursorColor: user.cursorColor,
+      createdAt: user.createdAt,
+    };
+  }, [user?.uid, user?.email, user?.username, user?.cursorColor, user?.createdAt]);
+
   const signup = async (email: string, password: string, username: string): Promise<User> => {
     setLoading(true);
     try {
@@ -64,10 +78,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setLoading(true);
     try {
       // Step 1: Clean up presence data BEFORE auth signout to prevent race conditions
+      // Use the original user object (not memoized) to ensure we have the current state
       if (user?.uid) {
         console.log('🚪 AuthContext: Starting presence cleanup before logout for user:', user.uid);
-        await presenceService.logoutCleanup(user.uid);
-        console.log('✅ AuthContext: Presence cleanup completed, proceeding with auth logout');
+        try {
+          await presenceService.logoutCleanup(user.uid);
+          console.log('✅ AuthContext: Presence cleanup completed, proceeding with auth logout');
+        } catch (presenceError) {
+          console.warn('⚠️ AuthContext: Presence cleanup failed, but continuing with logout:', presenceError);
+          // Don't fail the entire logout process if presence cleanup fails
+        }
       }
       
       // Step 2: Now perform the actual auth logout
@@ -81,7 +101,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const value: AuthContextType = {
-    user,
+    user: memoizedUser,
     loading,
     signup,
     login,

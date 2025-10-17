@@ -16,6 +16,7 @@ export interface PresenceUpdate {
 class PresenceService {
   private listeners: { [key: string]: any } = {};
   private disconnectHandlers: { [userId: string]: any } = {};
+  private isLoggingOut = false;
 
   /**
    * Mark user as online
@@ -42,6 +43,15 @@ class PresenceService {
    */
   async setOffline(userId: string): Promise<void> {
     try {
+      console.log('📴 Setting user offline:', userId);
+      
+      // Check if user is still authenticated
+      const { auth } = await import('../firebase');
+      const currentUser = auth.currentUser;
+      console.log('🔐 Current auth user:', currentUser?.uid || 'null');
+      console.log('🔐 Target user ID:', userId);
+      console.log('🔐 Auth matches target:', currentUser?.uid === userId);
+      
       const presenceRef = ref(database, `sessions/main/users/${userId}/presence`);
       const presenceData: PresenceData = {
         online: false,
@@ -51,6 +61,7 @@ class PresenceService {
       };
 
       await set(presenceRef, presenceData);
+      console.log('✅ Successfully set user offline:', userId);
     } catch (error) {
       console.error('Error setting user offline:', error);
       throw error;
@@ -156,11 +167,29 @@ class PresenceService {
   }
 
   /**
+   * Set logout flag to prevent usePresence cleanup from interfering
+   */
+  setLogoutFlag(value: boolean): void {
+    this.isLoggingOut = value;
+    console.log('🏁 PresenceService logout flag set to:', value);
+  }
+
+  /**
+   * Get logout flag status
+   */
+  getLogoutFlag(): boolean {
+    return this.isLoggingOut;
+  }
+
+  /**
    * Explicit logout cleanup - ensures proper offline status before auth signout
    * This prevents race conditions between disconnect handlers and manual cleanup
    */
   async logoutCleanup(userId: string): Promise<void> {
     try {
+      // Set logout flag to prevent usePresence cleanup
+      this.setLogoutFlag(true);
+      
       // Step 1: Cancel disconnect handlers first to prevent them from overriding our manual cleanup
       await this.cancelDisconnectHandler(userId);
       
@@ -177,47 +206,28 @@ class PresenceService {
         await this.setOffline(userId);
       } catch (fallbackError) {
         console.error('Fallback offline setting failed:', fallbackError);
+        // Don't throw the error - just log it and continue
+        console.warn('Logout cleanup failed, but this is not critical for the logout process');
       }
-      throw error;
+      // Don't re-throw the error to prevent blocking the logout process
+    } finally {
+      // Reset logout flag after cleanup is complete
+      this.setLogoutFlag(false);
     }
   }
 
   /**
    * Clean up stale presence data (users inactive for more than the timeout)
+   * Note: This function is disabled because it requires admin permissions to modify other users' data
+   * The Firebase security rules only allow users to modify their own presence data
    */
   async cleanupStalePresence(timeoutMinutes: number = 5): Promise<void> {
-    try {
-      const { get } = await import('firebase/database');
-      const presenceRef = ref(database, 'sessions/main/users');
-      const snapshot = await get(presenceRef);
-      
-      if (!snapshot.exists()) {
-        return;
-      }
-
-      const users = snapshot.val();
-      const now = Date.now();
-      const timeout = timeoutMinutes * 60 * 1000;
-      
-      const cleanupPromises: Promise<void>[] = [];
-      
-      Object.entries(users).forEach(([userId, userData]: [string, any]) => {
-        if (userData?.presence) {
-          const lastSeen = userData.presence.lastSeen || 0;
-          const isStale = (now - lastSeen) > timeout;
-          
-          if (isStale && userData.presence.online) {
-            cleanupPromises.push(this.setOffline(userId));
-          }
-        }
-      });
-      
-      if (cleanupPromises.length > 0) {
-        await Promise.all(cleanupPromises);
-      }
-    } catch (error) {
-      console.error('Error during presence cleanup:', error);
-    }
+    console.log('🧹 cleanupStalePresence called but disabled - requires admin permissions to modify other users');
+    // This function is disabled because:
+    // 1. Firebase security rules only allow users to modify their own data
+    // 2. Setting other users offline requires admin permissions
+    // 3. The onDisconnect handlers should handle cleanup automatically
+    return;
   }
 
   /**
