@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
-import { Stage, Layer, Rect, Line, Text, Group } from 'react-konva';
+import { Stage, Layer, Rect, Line, Text, Group, Circle } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type Konva from 'konva';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
@@ -11,6 +11,20 @@ import type { Shape } from '../../services/canvasService';
 
 // Constants for rotation handles
 const ROTATION_HANDLE_DISTANCE = 150; // Distance from shape top to rotation handle
+
+// Helper function to calculate triangle vertices (equilateral triangle pointing upward)
+const calculateTriangleVertices = (width: number, height: number) => {
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  
+  // Equilateral triangle pointing upward
+  // Top vertex, bottom left vertex, bottom right vertex
+  return [
+    { x: 0, y: -halfHeight },           // Top
+    { x: -halfWidth, y: halfHeight },   // Bottom left
+    { x: halfWidth, y: halfHeight },    // Bottom right
+  ];
+};
 
 export function Canvas() {
   const stageRef = useRef<any>(null);
@@ -81,6 +95,7 @@ export function Canvas() {
   // Canvas state hook for shapes and drawing
   const { 
     mode,
+    activeTool,
     shapes, 
     selectedColor, 
     selectedShapeId,
@@ -461,26 +476,38 @@ export function Canvas() {
     const centerX = node.x();
     const centerY = node.y();
     
-    // Convert center coordinates to top-left coordinates
-    const topLeftX = centerX - shape.width / 2;
-    const topLeftY = centerY - shape.height / 2;
-    
-    // Clamp position to canvas boundaries in real-time
-    const clampedPosition = canvasService.clampShapeToCanvas(
-      topLeftX, 
-      topLeftY, 
-      shape.width, 
-      shape.height
-    );
-    
-    // Convert back to center coordinates
-    const clampedCenterX = clampedPosition.x + shape.width / 2;
-    const clampedCenterY = clampedPosition.y + shape.height / 2;
-    
-    // Only update position if it was clamped
-    if (clampedCenterX !== centerX || clampedCenterY !== centerY) {
-      node.x(clampedCenterX);
-      node.y(clampedCenterY);
+    if (shape.type === 'circle') {
+      // For circles, use circle-specific clamping
+      const radius = shape.radius || shape.width / 2;
+      const clampedPosition = canvasService.clampCircleToCanvas(centerX, centerY, radius);
+      
+      // Only update position if it was clamped
+      if (clampedPosition.x !== centerX || clampedPosition.y !== centerY) {
+        node.x(clampedPosition.x);
+        node.y(clampedPosition.y);
+      }
+    } else {
+      // For rectangles and triangles, convert center coordinates to top-left coordinates
+      const topLeftX = centerX - shape.width / 2;
+      const topLeftY = centerY - shape.height / 2;
+      
+      // Clamp position to canvas boundaries in real-time
+      const clampedPosition = canvasService.clampShapeToCanvas(
+        topLeftX, 
+        topLeftY, 
+        shape.width, 
+        shape.height
+      );
+      
+      // Convert back to center coordinates
+      const clampedCenterX = clampedPosition.x + shape.width / 2;
+      const clampedCenterY = clampedPosition.y + shape.height / 2;
+      
+      // Only update position if it was clamped
+      if (clampedCenterX !== centerX || clampedCenterY !== centerY) {
+        node.x(clampedCenterX);
+        node.y(clampedCenterY);
+      }
     }
     
     // Force React re-render for smooth handle position updates
@@ -492,33 +519,54 @@ export function Canvas() {
     const centerX = node.x();
     const centerY = node.y();
     
-    // Convert center coordinates to top-left coordinates
-    const topLeftX = centerX - shape.width / 2;
-    const topLeftY = centerY - shape.height / 2;
+    let finalPosition;
     
-    // Validate and clamp final position
-    const validatedPosition = canvasService.validateShapePosition(
-      topLeftX,
-      topLeftY,
-      shape.width,
-      shape.height
-    );
-    
-    // Convert back to center coordinates
-    const finalCenterX = validatedPosition.x + shape.width / 2;
-    const finalCenterY = validatedPosition.y + shape.height / 2;
-    
-    // Apply clamped position if needed
-    if (validatedPosition.wasClamped) {
-      node.x(finalCenterX);
-      node.y(finalCenterY);
-      console.log('🔒 Shape position clamped to canvas bounds');
+    if (shape.type === 'circle') {
+      // For circles, validate using circle bounds
+      const radius = shape.radius || shape.width / 2;
+      const clampedPosition = canvasService.clampCircleToCanvas(centerX, centerY, radius);
+      
+      // Apply clamped position if needed
+      if (clampedPosition.x !== centerX || clampedPosition.y !== centerY) {
+        node.x(clampedPosition.x);
+        node.y(clampedPosition.y);
+        console.log('🔒 Circle position clamped to canvas bounds');
+      }
+      
+      // Store center coordinates for circles
+      finalPosition = {
+        x: clampedPosition.x,
+        y: clampedPosition.y,
+      };
+    } else {
+      // For rectangles and triangles, convert center coordinates to top-left coordinates
+      const topLeftX = centerX - shape.width / 2;
+      const topLeftY = centerY - shape.height / 2;
+      
+      // Validate and clamp final position
+      const validatedPosition = canvasService.validateShapePosition(
+        topLeftX,
+        topLeftY,
+        shape.width,
+        shape.height
+      );
+      
+      // Convert back to center coordinates
+      const finalCenterX = validatedPosition.x + shape.width / 2;
+      const finalCenterY = validatedPosition.y + shape.height / 2;
+      
+      // Apply clamped position if needed
+      if (validatedPosition.wasClamped) {
+        node.x(finalCenterX);
+        node.y(finalCenterY);
+        console.log('🔒 Shape position clamped to canvas bounds');
+      }
+      
+      finalPosition = {
+        x: validatedPosition.x,
+        y: validatedPosition.y,
+      };
     }
-    
-    const finalPosition = {
-      x: validatedPosition.x,
-      y: validatedPosition.y,
-    };
     
     try {
       // Update shape position in Firestore
@@ -529,8 +577,13 @@ export function Canvas() {
     } catch (error) {
       console.error('Failed to update shape position:', error);
       // Reset position on error
-      node.x(shape.x + shape.width / 2);
-      node.y(shape.y + shape.height / 2);
+      if (shape.type === 'circle') {
+        node.x(shape.x);
+        node.y(shape.y);
+      } else {
+        node.x(shape.x + shape.width / 2);
+        node.y(shape.y + shape.height / 2);
+      }
     }
   }, [updateShape, unlockShape]);
 
@@ -562,12 +615,32 @@ export function Canvas() {
       y: (pos.y - stage.y()) / stage.scaleY(),
     };
     
-    // Get real-time shape position (convert from center to top-left coordinates)
+    // Get real-time shape position
     const shapeNode = shapeNodesRef.current.get(shape.id);
-    const centerX = shapeNode ? shapeNode.x() : (shape.x + shape.width / 2);
-    const centerY = shapeNode ? shapeNode.y() : (shape.y + shape.height / 2);
-    const shapeX = centerX - shape.width / 2; // Convert to top-left
-    const shapeY = centerY - shape.height / 2; // Convert to top-left
+    let shapeX, shapeY, shapeWidth, shapeHeight, aspectRatio;
+    
+    if (shape.type === 'circle') {
+      // For circles, use center coordinates and radius
+      const centerX = shapeNode ? shapeNode.x() : shape.x;
+      const centerY = shapeNode ? shapeNode.y() : shape.y;
+      const radius = shape.radius || shape.width / 2;
+      
+      shapeX = centerX - radius;
+      shapeY = centerY - radius;
+      shapeWidth = radius * 2;
+      shapeHeight = radius * 2;
+      aspectRatio = 1; // Circles are always square
+    } else {
+      // For rectangles and triangles, use bounding box
+      const centerX = shapeNode ? shapeNode.x() : (shape.x + shape.width / 2);
+      const centerY = shapeNode ? shapeNode.y() : (shape.y + shape.height / 2);
+      
+      shapeX = centerX - shape.width / 2;
+      shapeY = centerY - shape.height / 2;
+      shapeWidth = shape.width;
+      shapeHeight = shape.height;
+      aspectRatio = shape.width / shape.height;
+    }
     
     setIsResizing(true);
     setActiveOperation('resize');
@@ -577,16 +650,16 @@ export function Canvas() {
       cursorY: canvasPos.y,
       shapeX: shapeX,
       shapeY: shapeY,
-      width: shape.width,
-      height: shape.height,
-      aspectRatio: shape.width / shape.height,
+      width: shapeWidth,
+      height: shapeHeight,
+      aspectRatio: aspectRatio,
     });
     setPreviewDimensions({
       shapeId: shape.id,
       x: shapeX,
       y: shapeY,
-      width: shape.width,
-      height: shape.height,
+      width: shapeWidth,
+      height: shapeHeight,
     });
   }, []);
 
@@ -606,6 +679,10 @@ export function Canvas() {
     
     // Extract handle direction from name (e.g., "shape_123-br" -> "br")
     const direction = activeHandle.handleName.split('-').pop() || '';
+    
+    // Get the shape being resized to determine its type
+    const resizingShape = shapes.find(s => s.id === activeHandle.shapeId);
+    if (!resizingShape) return;
     
     if (activeHandle.handleType === 'corner') {
       // Corner resize - maintain aspect ratio, cursor locks to handle
@@ -650,9 +727,10 @@ export function Canvas() {
       let newWidth = resizeStart.width * scale;
       let newHeight = resizeStart.height * scale;
       
-      // Enforce minimum size
-      newWidth = Math.max(10, newWidth);
-      newHeight = Math.max(10, newHeight);
+      // For circles, enforce minimum radius (5px = 10px diameter)
+      const minSize = resizingShape.type === 'circle' ? 10 : 10;
+      newWidth = Math.max(minSize, newWidth);
+      newHeight = Math.max(minSize, newHeight);
       
       // Maintain aspect ratio after minimum enforcement
       if (newWidth < resizeStart.width * scale) {
@@ -694,47 +772,105 @@ export function Canvas() {
         height: newHeight,
       });
     } else if (activeHandle.handleType === 'edge') {
-      // Edge resize - single dimension only
+      // Edge resize - single dimension only for rectangles/triangles, proportional for circles
       let newX = resizeStart.shapeX;
       let newY = resizeStart.shapeY;
       let newWidth = resizeStart.width;
       let newHeight = resizeStart.height;
       
-      switch (direction) {
-        case 't': // Top edge: resize height, adjust y position
-          {
-            const anchorY = resizeStart.shapeY + resizeStart.height; // Anchor bottom
-            newHeight = anchorY - canvasY;
-            newHeight = Math.max(10, newHeight);
-            newY = anchorY - newHeight;
-          }
-          break;
-        case 'b': // Bottom edge: resize height only
-          {
-            const anchorY = resizeStart.shapeY; // Anchor top
-            newHeight = canvasY - anchorY;
-            newHeight = Math.max(10, newHeight);
-            newY = anchorY;
-          }
-          break;
-        case 'l': // Left edge: resize width, adjust x position
-          {
-            const anchorX = resizeStart.shapeX + resizeStart.width; // Anchor right
-            newWidth = anchorX - canvasX;
-            newWidth = Math.max(10, newWidth);
-            newX = anchorX - newWidth;
-          }
-          break;
-        case 'r': // Right edge: resize width only
-          {
-            const anchorX = resizeStart.shapeX; // Anchor left
-            newWidth = canvasX - anchorX;
-            newWidth = Math.max(10, newWidth);
-            newX = anchorX;
-          }
-          break;
-        default:
-          return;
+      if (resizingShape.type === 'circle') {
+        // For circles, edge handles should maintain aspect ratio (circles are always round)
+        
+        switch (direction) {
+          case 't': // Top edge: calculate distance from center
+            {
+              const centerX = resizeStart.shapeX + resizeStart.width / 2;
+              const centerY = resizeStart.shapeY + resizeStart.height / 2;
+              const distance = Math.sqrt(Math.pow(canvasX - centerX, 2) + Math.pow(canvasY - centerY, 2));
+              const newRadius = Math.max(5, distance);
+              newWidth = newRadius * 2;
+              newHeight = newRadius * 2;
+              newX = centerX - newRadius;
+              newY = centerY - newRadius;
+            }
+            break;
+          case 'b': // Bottom edge: calculate distance from center
+            {
+              const centerX = resizeStart.shapeX + resizeStart.width / 2;
+              const centerY = resizeStart.shapeY + resizeStart.height / 2;
+              const distance = Math.sqrt(Math.pow(canvasX - centerX, 2) + Math.pow(canvasY - centerY, 2));
+              const newRadius = Math.max(5, distance);
+              newWidth = newRadius * 2;
+              newHeight = newRadius * 2;
+              newX = centerX - newRadius;
+              newY = centerY - newRadius;
+            }
+            break;
+          case 'l': // Left edge: calculate distance from center
+            {
+              const centerX = resizeStart.shapeX + resizeStart.width / 2;
+              const centerY = resizeStart.shapeY + resizeStart.height / 2;
+              const distance = Math.sqrt(Math.pow(canvasX - centerX, 2) + Math.pow(canvasY - centerY, 2));
+              const newRadius = Math.max(5, distance);
+              newWidth = newRadius * 2;
+              newHeight = newRadius * 2;
+              newX = centerX - newRadius;
+              newY = centerY - newRadius;
+            }
+            break;
+          case 'r': // Right edge: calculate distance from center
+            {
+              const centerX = resizeStart.shapeX + resizeStart.width / 2;
+              const centerY = resizeStart.shapeY + resizeStart.height / 2;
+              const distance = Math.sqrt(Math.pow(canvasX - centerX, 2) + Math.pow(canvasY - centerY, 2));
+              const newRadius = Math.max(5, distance);
+              newWidth = newRadius * 2;
+              newHeight = newRadius * 2;
+              newX = centerX - newRadius;
+              newY = centerY - newRadius;
+            }
+            break;
+          default:
+            return;
+        }
+      } else {
+        // For rectangles and triangles, use single dimension resize
+        switch (direction) {
+          case 't': // Top edge: resize height, adjust y position
+            {
+              const anchorY = resizeStart.shapeY + resizeStart.height; // Anchor bottom
+              newHeight = anchorY - canvasY;
+              newHeight = Math.max(10, newHeight);
+              newY = anchorY - newHeight;
+            }
+            break;
+          case 'b': // Bottom edge: resize height only
+            {
+              const anchorY = resizeStart.shapeY; // Anchor top
+              newHeight = canvasY - anchorY;
+              newHeight = Math.max(10, newHeight);
+              newY = anchorY;
+            }
+            break;
+          case 'l': // Left edge: resize width, adjust x position
+            {
+              const anchorX = resizeStart.shapeX + resizeStart.width; // Anchor right
+              newWidth = anchorX - canvasX;
+              newWidth = Math.max(10, newWidth);
+              newX = anchorX - newWidth;
+            }
+            break;
+          case 'r': // Right edge: resize width only
+            {
+              const anchorX = resizeStart.shapeX; // Anchor left
+              newWidth = canvasX - anchorX;
+              newWidth = Math.max(10, newWidth);
+              newX = anchorX;
+            }
+            break;
+          default:
+            return;
+        }
       }
       
       setPreviewDimensions({
@@ -768,19 +904,41 @@ export function Canvas() {
     setResizeStart(null);
 
     try {
-      // Save resize to Firestore
-      await canvasService.resizeShape(
-        activeHandle.shapeId,
-        previewDimensions.width,
-        previewDimensions.height
-      );
-      
-      // Also update position if it changed (for top/left edge resizes)
-      if (resizeStart && (previewDimensions.x !== resizeStart.shapeX || previewDimensions.y !== resizeStart.shapeY)) {
-        await updateShape(activeHandle.shapeId, {
-          x: previewDimensions.x,
-          y: previewDimensions.y
-        });
+      // Get the shape being resized to determine its type
+      const resizingShape = shapes.find(s => s.id === activeHandle.shapeId);
+      if (!resizingShape) {
+        console.error('❌ Shape not found for resize');
+        setPreviewDimensions(null);
+        return;
+      }
+
+      if (resizingShape.type === 'circle') {
+        // For circles, use resizeCircle method
+        const newRadius = previewDimensions.width / 2;
+        await canvasService.resizeCircle(activeHandle.shapeId, newRadius);
+        
+        // Update position if it changed
+        if (resizeStart && (previewDimensions.x !== resizeStart.shapeX || previewDimensions.y !== resizeStart.shapeY)) {
+          await updateShape(activeHandle.shapeId, {
+            x: previewDimensions.x + newRadius, // Convert back to center coordinates
+            y: previewDimensions.y + newRadius
+          });
+        }
+      } else {
+        // For rectangles and triangles, use resizeShape method
+        await canvasService.resizeShape(
+          activeHandle.shapeId,
+          previewDimensions.width,
+          previewDimensions.height
+        );
+        
+        // Also update position if it changed (for top/left edge resizes)
+        if (resizeStart && (previewDimensions.x !== resizeStart.shapeX || previewDimensions.y !== resizeStart.shapeY)) {
+          await updateShape(activeHandle.shapeId, {
+            x: previewDimensions.x,
+            y: previewDimensions.y
+          });
+        }
       }
       
       console.log('✅ Shape resized successfully');
@@ -793,7 +951,7 @@ export function Canvas() {
       console.error('Resize operation failed. Please try again.');
     }
     // Note: previewDimensions will be cleared when we detect the shape update from Firestore
-  }, [isResizing, previewDimensions, activeHandle, resizeStart, updateShape]);
+  }, [isResizing, previewDimensions, activeHandle, resizeStart, updateShape, shapes]);
 
   // Rotation handle mousedown - start rotation
   const handleRotationStart = useCallback((e: KonvaEventObject<MouseEvent>, shape: Shape) => {
@@ -825,8 +983,8 @@ export function Canvas() {
     
     // Get real-time shape position from node (Bug #2 fix)
     const shapeNode = shapeNodesRef.current.get(shape.id);
-    const shapeX = shapeNode ? shapeNode.x() : (shape.x + shape.width / 2);
-    const shapeY = shapeNode ? shapeNode.y() : (shape.y + shape.height / 2);
+    const shapeX = shapeNode ? shapeNode.x() : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2);
+    const shapeY = shapeNode ? shapeNode.y() : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2);
     
     // Calculate shape center using real-time coordinates
     const centerX = shapeX;
@@ -870,8 +1028,8 @@ export function Canvas() {
     
     // Get real-time shape position from node (Bug #2 fix)
     const shapeNode = shapeNodesRef.current.get(shape.id);
-    const shapeX = shapeNode ? shapeNode.x() : (shape.x + shape.width / 2);
-    const shapeY = shapeNode ? shapeNode.y() : (shape.y + shape.height / 2);
+    const shapeX = shapeNode ? shapeNode.x() : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2);
+    const shapeY = shapeNode ? shapeNode.y() : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2);
     
     // Calculate shape center using real-time coordinates
     const centerX = shapeX;
@@ -1041,11 +1199,26 @@ export function Canvas() {
     if (!shape) return;
     
     // Check if the shape dimensions match the preview (within 1px tolerance for rounding)
-    const dimensionsMatch = 
-      Math.abs(shape.width - previewDimensions.width) < 1 &&
-      Math.abs(shape.height - previewDimensions.height) < 1 &&
-      Math.abs(shape.x - previewDimensions.x) < 1 &&
-      Math.abs(shape.y - previewDimensions.y) < 1;
+    let dimensionsMatch;
+    if (shape.type === 'circle') {
+      // For circles, compare radius and center position
+      const expectedRadius = previewDimensions.width / 2;
+      const actualRadius = shape.radius || shape.width / 2;
+      const expectedCenterX = previewDimensions.x + previewDimensions.width / 2;
+      const expectedCenterY = previewDimensions.y + previewDimensions.height / 2;
+      
+      dimensionsMatch = 
+        Math.abs(actualRadius - expectedRadius) < 1 &&
+        Math.abs(shape.x - expectedCenterX) < 1 &&
+        Math.abs(shape.y - expectedCenterY) < 1;
+    } else {
+      // For rectangles and triangles, compare bounding box
+      dimensionsMatch = 
+        Math.abs(shape.width - previewDimensions.width) < 1 &&
+        Math.abs(shape.height - previewDimensions.height) < 1 &&
+        Math.abs(shape.x - previewDimensions.x) < 1 &&
+        Math.abs(shape.y - previewDimensions.y) < 1;
+    }
     
     if (dimensionsMatch) {
       console.log('✅ Firestore update confirmed, clearing preview dimensions');
@@ -1153,6 +1326,13 @@ export function Canvas() {
                 const shapeNode = shapeNodesRef.current.get(shape.id);
                 displayX = shapeNode ? shapeNode.x() : shape.x;
                 displayY = shapeNode ? shapeNode.y() : shape.y;
+                
+                // For circles, calculate display dimensions from radius
+                if (shape.type === 'circle') {
+                  const radius = shape.radius || shape.width / 2;
+                  displayWidth = radius * 2;
+                  displayHeight = radius * 2;
+                }
               }
               
               // Get current rotation (use preview during rotation, otherwise use shape rotation)
@@ -1170,8 +1350,14 @@ export function Canvas() {
                         shapeNodesRef.current.delete(shape.id);
                       }
                     }}
-                    x={hasOptimisticUpdate ? displayX + displayWidth / 2 : shape.x + shape.width / 2}
-                    y={hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y + shape.height / 2}
+                    x={shape.type === 'circle' 
+                      ? (hasOptimisticUpdate ? displayX + displayWidth / 2 : shape.x)
+                      : (hasOptimisticUpdate ? displayX + displayWidth / 2 : shape.x + shape.width / 2)
+                    }
+                    y={shape.type === 'circle' 
+                      ? (hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y)
+                      : (hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y + shape.height / 2)
+                    }
                     offsetX={0}
                     offsetY={0}
                     rotation={currentRotation}
@@ -1181,16 +1367,49 @@ export function Canvas() {
                     onDragEnd={(e) => handleShapeDragEnd(e, shape)}
                     listening={lockStatus !== 'locked-by-other' && !hasOptimisticUpdate}
                   >
-                    <Rect
-                      x={-displayWidth / 2}
-                      y={-displayHeight / 2}
-                      width={displayWidth}
-                      height={displayHeight}
-                      fill={shape.color}
-                      stroke={strokeColor}
-                      strokeWidth={strokeWidth}
-                      opacity={opacity}
-                    />
+                    {/* Render shape based on type */}
+                    {shape.type === 'rectangle' && (
+                      <Rect
+                        x={-displayWidth / 2}
+                        y={-displayHeight / 2}
+                        width={displayWidth}
+                        height={displayHeight}
+                        fill={shape.color}
+                        stroke={strokeColor}
+                        strokeWidth={strokeWidth}
+                        opacity={opacity}
+                        listening={true}
+                      />
+                    )}
+                    
+                    {shape.type === 'circle' && (
+                      <Circle
+                        x={0}
+                        y={0}
+                        radius={displayWidth / 2}
+                        fill={shape.color}
+                        stroke={strokeColor}
+                        strokeWidth={strokeWidth}
+                        opacity={opacity}
+                        listening={true}
+                      />
+                    )}
+                    
+                    {shape.type === 'triangle' && (() => {
+                      const vertices = calculateTriangleVertices(displayWidth, displayHeight);
+                      const points = vertices.flatMap(v => [v.x, v.y]);
+                      return (
+                        <Line
+                          points={points}
+                          closed={true}
+                          fill={shape.color}
+                          stroke={strokeColor}
+                          strokeWidth={strokeWidth}
+                          opacity={opacity}
+                          listening={true}
+                        />
+                      );
+                    })()}
                     
                     {/* Resize handles - inside the rotated group so they rotate with the shape */}
                     {lockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && (() => {
@@ -1202,8 +1421,15 @@ export function Canvas() {
                       const hoverSize = 20 / stageScale;
                       const offset = baseSize / 2;
                       
-                      // Define 8 resize handles using local coordinates (relative to shape center)
-                      const handles = [
+                      // Define resize handles using local coordinates (relative to shape center)
+                      const handles = shape.type === 'circle' ? [
+                        // For circles, show only 4 handles at cardinal directions
+                        { x: -offset, y: -displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
+                        { x: -displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
+                        { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
+                        { x: -offset, y: displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
+                      ] : [
+                        // For rectangles and triangles, show all 8 handles
                         { x: -displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
                         { x: -offset, y: -displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
                         { x: displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-tr` },
@@ -1320,8 +1546,8 @@ export function Canvas() {
                   {/* Lock icon for shapes locked by others */}
                   {lockStatus === 'locked-by-other' && (
                     <Text
-                      x={shape.x + shape.width - 20}
-                      y={shape.y + 5}
+                      x={shape.type === 'circle' ? shape.x + (shape.radius || shape.width / 2) - 20 : shape.x + shape.width - 20}
+                      y={shape.type === 'circle' ? shape.y - (shape.radius || shape.width / 2) + 5 : shape.y + 5}
                       text="🔒"
                       fontSize={16}
                       listening={false} // Icon shouldn't capture events
@@ -1331,20 +1557,61 @@ export function Canvas() {
               );
             })}
             
-            {/* Render preview rectangle during drawing */}
-            {drawingState.isDrawing && drawingState.previewShape && (
-              <Rect
-                x={drawingState.previewShape.x}
-                y={drawingState.previewShape.y}
-                width={drawingState.previewShape.width}
-                height={drawingState.previewShape.height}
-                fill={selectedColor}
-                opacity={0.5}
-                stroke={selectedColor}
-                strokeWidth={2}
-                dash={[10, 5]}
-              />
-            )}
+            {/* Render preview shape during drawing */}
+            {drawingState.isDrawing && drawingState.previewShape && (() => {
+              const { x, y, width, height } = drawingState.previewShape;
+              
+              if (activeTool === 'circle') {
+                // For circles, calculate center and radius from the preview bounding box
+                const centerX = x + width / 2;
+                const centerY = y + height / 2;
+                const radius = Math.min(width, height) / 2;
+                
+                return (
+                  <Circle
+                    x={centerX}
+                    y={centerY}
+                    radius={radius}
+                    fill={selectedColor}
+                    opacity={0.5}
+                    stroke={selectedColor}
+                    strokeWidth={2}
+                    dash={[10, 5]}
+                  />
+                );
+              } else if (activeTool === 'triangle') {
+                // For triangles, calculate vertices from the preview bounding box
+                const vertices = calculateTriangleVertices(width, height);
+                const points = vertices.flatMap(v => [x + width / 2 + v.x, y + height / 2 + v.y]);
+                
+                return (
+                  <Line
+                    points={points}
+                    closed={true}
+                    fill={selectedColor}
+                    opacity={0.5}
+                    stroke={selectedColor}
+                    strokeWidth={2}
+                    dash={[10, 5]}
+                  />
+                );
+              } else {
+                // Rectangle (default)
+                return (
+                  <Rect
+                    x={x}
+                    y={y}
+                    width={width}
+                    height={height}
+                    fill={selectedColor}
+                    opacity={0.5}
+                    stroke={selectedColor}
+                    strokeWidth={2}
+                    dash={[10, 5]}
+                  />
+                );
+              }
+            })()}
             
             {/* Render preview during resize */}
             {isResizing && previewDimensions && activeHandle && (() => {
@@ -1365,22 +1632,61 @@ export function Canvas() {
                     y={previewDimensions.y + previewDimensions.height / 2}
                     rotation={resizingShape.rotation || 0}
                   >
-                    <Rect
-                      x={-previewDimensions.width / 2}
-                      y={-previewDimensions.height / 2}
-                      width={previewDimensions.width}
-                      height={previewDimensions.height}
-                      fill={resizingShape.color}
-                      opacity={0.6}
-                      stroke="#10b981"
-                      strokeWidth={3}
-                      listening={false}
-                    />
+                    {/* Render preview shape based on type */}
+                    {resizingShape.type === 'rectangle' && (
+                      <Rect
+                        x={-previewDimensions.width / 2}
+                        y={-previewDimensions.height / 2}
+                        width={previewDimensions.width}
+                        height={previewDimensions.height}
+                        fill={resizingShape.color}
+                        opacity={0.6}
+                        stroke="#10b981"
+                        strokeWidth={3}
+                        listening={false}
+                      />
+                    )}
+                    
+                    {resizingShape.type === 'circle' && (
+                      <Circle
+                        x={0}
+                        y={0}
+                        radius={previewDimensions.width / 2}
+                        fill={resizingShape.color}
+                        opacity={0.6}
+                        stroke="#10b981"
+                        strokeWidth={3}
+                        listening={false}
+                      />
+                    )}
+                    
+                    {resizingShape.type === 'triangle' && (() => {
+                      const vertices = calculateTriangleVertices(previewDimensions.width, previewDimensions.height);
+                      const points = vertices.flatMap(v => [v.x, v.y]);
+                      return (
+                        <Line
+                          points={points}
+                          closed={true}
+                          fill={resizingShape.color}
+                          opacity={0.6}
+                          stroke="#10b981"
+                          strokeWidth={3}
+                          listening={false}
+                        />
+                      );
+                    })()}
                     
                     {/* Preview handles - positioned relative to rotated shape */}
                     {(() => {
-                      // Define 8 resize handles using local coordinates (relative to shape center)
-                      const localHandles = [
+                      // Define resize handles using local coordinates (relative to shape center)
+                      const localHandles = resizingShape.type === 'circle' ? [
+                        // For circles, show only 4 handles at cardinal directions
+                        { x: -offset, y: -previewDimensions.height / 2 - offset },
+                        { x: -previewDimensions.width / 2 - offset, y: -offset },
+                        { x: previewDimensions.width / 2 - offset, y: -offset },
+                        { x: -offset, y: previewDimensions.height / 2 - offset },
+                      ] : [
+                        // For rectangles and triangles, show all 8 handles
                         { x: -previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
                         { x: -offset, y: -previewDimensions.height / 2 - offset },
                         { x: previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
@@ -1451,8 +1757,8 @@ export function Canvas() {
               
               // Get real-time shape position from node (Bug #1 fix)
               const shapeNode = shapeNodesRef.current.get(shape.id);
-              const realTimeX = shapeNode ? shapeNode.x() : (shape.x + shape.width / 2);
-              const realTimeY = shapeNode ? shapeNode.y() : (shape.y + shape.height / 2);
+              const realTimeX = shapeNode ? shapeNode.x() : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2);
+              const realTimeY = shapeNode ? shapeNode.y() : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2);
               
               // Calculate rotation handle position using real-time coordinates
               const centerX = realTimeX;

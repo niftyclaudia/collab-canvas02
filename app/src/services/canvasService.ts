@@ -18,11 +18,12 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 // Shape interface matching the data model from task.md
 export interface Shape {
   id: string;
-  type: 'rectangle';
+  type: 'rectangle' | 'circle' | 'triangle';
   x: number;
   y: number;
   width: number;
   height: number;
+  radius?: number; // For circles - radius of the circle
   color: string;
   rotation?: number; // Rotation in degrees (0-360)
   createdBy: string;
@@ -34,11 +35,12 @@ export interface Shape {
 
 // Shape creation data (without auto-generated fields)
 export interface CreateShapeData {
-  type: 'rectangle';
+  type: 'rectangle' | 'circle' | 'triangle';
   x: number;
   y: number;
   width: number;
   height: number;
+  radius?: number; // For circles - radius of the circle
   color: string;
   rotation?: number; // Optional rotation field
   createdBy: string;
@@ -50,6 +52,7 @@ export interface UpdateShapeData {
   y?: number;
   width?: number;
   height?: number;
+  radius?: number; // For circles - radius of the circle
   color?: string;
   rotation?: number;
   lockedBy?: string | null;
@@ -201,6 +204,19 @@ class CanvasService {
   }
 
   /**
+   * Validate circle bounds (ensure within canvas limits)
+   */
+  validateCircleBounds(x: number, y: number, radius: number): boolean {
+    return (
+      x - radius >= 0 && 
+      y - radius >= 0 && 
+      x + radius <= CANVAS_WIDTH && 
+      y + radius <= CANVAS_HEIGHT &&
+      radius > 0
+    );
+  }
+
+  /**
    * Clamp shape position to stay within canvas bounds
    * Returns corrected position if shape would go outside canvas
    */
@@ -209,6 +225,18 @@ class CanvasService {
     // Ensure shape stays within left and top bounds
     const clampedX = Math.max(0, Math.min(x, CANVAS_WIDTH - width));
     const clampedY = Math.max(0, Math.min(y, CANVAS_HEIGHT - height));
+    
+    return { x: clampedX, y: clampedY };
+  }
+
+  /**
+   * Clamp circle position to stay within canvas bounds
+   * Returns corrected position if circle would go outside canvas
+   */
+  clampCircleToCanvas(x: number, y: number, radius: number): { x: number; y: number } {
+    // Ensure circle stays within canvas bounds
+    const clampedX = Math.max(radius, Math.min(x, CANVAS_WIDTH - radius));
+    const clampedY = Math.max(radius, Math.min(y, CANVAS_HEIGHT - radius));
     
     return { x: clampedX, y: clampedY };
   }
@@ -388,10 +416,123 @@ class CanvasService {
   }
 
   /**
+   * Calculate circle properties from drag coordinates
+   * Returns center point and radius
+   */
+  calculateCircleFromDrag(startX: number, startY: number, endX: number, endY: number) {
+    const centerX = (startX + endX) / 2;
+    const centerY = (startY + endY) / 2;
+    const radius = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)) / 2;
+    
+    return { x: centerX, y: centerY, radius };
+  }
+
+  /**
+   * Calculate triangle properties from drag coordinates
+   * Returns bounding box for equilateral triangle pointing upward
+   */
+  calculateTriangleFromDrag(startX: number, startY: number, endX: number, endY: number) {
+    const x = Math.min(startX, endX);
+    const y = Math.min(startY, endY);
+    const width = Math.abs(endX - startX);
+    const height = Math.abs(endY - startY);
+    
+    return { x, y, width, height };
+  }
+
+  /**
+   * Create a circle shape
+   * @param x - Center X coordinate
+   * @param y - Center Y coordinate
+   * @param radius - Circle radius
+   * @param color - Circle color
+   * @param createdBy - User ID who created the circle
+   */
+  async createCircle(x: number, y: number, radius: number, color: string, createdBy: string): Promise<Shape> {
+    // Validate minimum radius (5px)
+    if (radius < 5) {
+      throw new Error('Minimum circle radius is 5 pixels');
+    }
+
+    // Validate circle bounds
+    if (!this.validateCircleBounds(x, y, radius)) {
+      throw new Error('Circle would be outside canvas bounds');
+    }
+
+    const shapeData: CreateShapeData = {
+      type: 'circle',
+      x,
+      y,
+      width: radius * 2, // Store diameter as width for bounding box
+      height: radius * 2, // Store diameter as height for bounding box
+      radius,
+      color,
+      createdBy,
+    };
+
+    return this.createShape(shapeData);
+  }
+
+  /**
+   * Create a triangle shape
+   * @param x - Top-left X coordinate of bounding box
+   * @param y - Top-left Y coordinate of bounding box
+   * @param width - Width of bounding box
+   * @param height - Height of bounding box
+   * @param color - Triangle color
+   * @param createdBy - User ID who created the triangle
+   */
+  async createTriangle(x: number, y: number, width: number, height: number, color: string, createdBy: string): Promise<Shape> {
+    // Validate minimum size (10x10)
+    if (width < 10 || height < 10) {
+      throw new Error('Minimum triangle size is 10×10 pixels');
+    }
+
+    // Validate triangle bounds
+    if (!this.validateShapeBounds(x, y, width, height)) {
+      throw new Error('Triangle would be outside canvas bounds');
+    }
+
+    const shapeData: CreateShapeData = {
+      type: 'triangle',
+      x,
+      y,
+      width,
+      height,
+      color,
+      createdBy,
+    };
+
+    return this.createShape(shapeData);
+  }
+
+  /**
+   * Resize a circle by updating its radius
+   * @param shapeId - The ID of the circle to resize
+   * @param radius - New radius (must be >= 5px)
+   */
+  async resizeCircle(shapeId: string, radius: number): Promise<void> {
+    // Validate minimum radius
+    if (radius < 5) {
+      throw new Error('Minimum circle radius is 5 pixels');
+    }
+    
+    const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+    await updateDoc(shapeRef, {
+      radius: radius,
+      width: radius * 2, // Update bounding box width
+      height: radius * 2, // Update bounding box height
+      updatedAt: serverTimestamp()
+    });
+
+    console.log('✅ Circle resized successfully:', shapeId, `radius: ${radius}`);
+  }
+
+  /**
    * Resize a shape with validation
    * @param shapeId - The ID of the shape to resize
-   * @param width - New width (must be >= 10px)
-   * @param height - New height (must be >= 10px)
+   * @param width - New width (must be >= 10px for rectangles/triangles)
+   * @param height - New height (must be >= 10px for rectangles/triangles)
    */
   async resizeShape(shapeId: string, width: number, height: number): Promise<void> {
     // Validate minimum dimensions

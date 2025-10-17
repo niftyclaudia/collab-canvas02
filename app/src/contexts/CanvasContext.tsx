@@ -17,10 +17,17 @@ export interface DrawingState {
 // Canvas interaction modes
 export type CanvasMode = 'pan' | 'create';
 
+// Shape tool types
+export type ShapeTool = 'rectangle' | 'circle' | 'triangle';
+
 export interface CanvasState {
   // Mode state
   mode: CanvasMode;
   setMode: (mode: CanvasMode) => void;
+  
+  // Tool state
+  activeTool: ShapeTool;
+  setActiveTool: (tool: ShapeTool) => void;
   
   // Color state
   selectedColor: string;
@@ -74,6 +81,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const { user } = useAuth();
   const { showToast } = useToast();
   const [mode, setMode] = useState<CanvasMode>('create'); // Default to create mode
+  const [activeTool, setActiveTool] = useState<ShapeTool>('rectangle'); // Default to rectangle tool
   const [selectedColor, setSelectedColor] = useState<string>(DEFAULT_SHAPE_COLOR);
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [isLoadingShapes, setIsLoadingShapes] = useState<boolean>(true);
@@ -162,29 +170,58 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     setDrawingState(prev => {
       if (!prev.isDrawing || !prev.startPoint) return prev;
 
-      // Normalize rectangle coordinates
-      const normalized = canvasService.normalizeRectangle(
-        prev.startPoint.x,
-        prev.startPoint.y,
-        x,
-        y
-      );
+      let normalized;
+      let clampedPosition;
+      let constrainedShape;
 
-      // Clamp preview rectangle to canvas bounds
-      const clampedPosition = canvasService.clampShapeToCanvas(
-        normalized.x,
-        normalized.y,
-        normalized.width,
-        normalized.height
-      );
+      if (activeTool === 'circle') {
+        // Calculate circle properties
+        const circleProps = canvasService.calculateCircleFromDrag(
+          prev.startPoint.x,
+          prev.startPoint.y,
+          x,
+          y
+        );
 
-      // Create constrained preview shape
-      const constrainedShape = {
-        x: clampedPosition.x,
-        y: clampedPosition.y,
-        width: Math.min(normalized.width, CANVAS_WIDTH - clampedPosition.x),
-        height: Math.min(normalized.height, CANVAS_HEIGHT - clampedPosition.y),
-      };
+        // Clamp circle to canvas bounds
+        clampedPosition = canvasService.clampCircleToCanvas(
+          circleProps.x,
+          circleProps.y,
+          circleProps.radius
+        );
+
+        // Create constrained preview shape (using bounding box for preview)
+        constrainedShape = {
+          x: clampedPosition.x - circleProps.radius,
+          y: clampedPosition.y - circleProps.radius,
+          width: circleProps.radius * 2,
+          height: circleProps.radius * 2,
+        };
+      } else {
+        // For rectangles and triangles, use the same logic
+        normalized = canvasService.normalizeRectangle(
+          prev.startPoint.x,
+          prev.startPoint.y,
+          x,
+          y
+        );
+
+        // Clamp preview shape to canvas bounds
+        clampedPosition = canvasService.clampShapeToCanvas(
+          normalized.x,
+          normalized.y,
+          normalized.width,
+          normalized.height
+        );
+
+        // Create constrained preview shape
+        constrainedShape = {
+          x: clampedPosition.x,
+          y: clampedPosition.y,
+          width: Math.min(normalized.width, CANVAS_WIDTH - clampedPosition.x),
+          height: Math.min(normalized.height, CANVAS_HEIGHT - clampedPosition.y),
+        };
+      }
 
       return {
         ...prev,
@@ -192,39 +229,95 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         previewShape: constrainedShape,
       };
     });
-  }, []);
+  }, [activeTool]);
 
   const finishDrawing = useCallback(async () => {
-    if (!drawingState.isDrawing || !drawingState.previewShape) {
+    if (!drawingState.isDrawing || !drawingState.previewShape || !drawingState.startPoint) {
       setDrawingState(initialDrawingState);
       return;
     }
 
     const { x, y, width, height } = drawingState.previewShape;
 
-    // Validate minimum size (10x10 pixels)
-    if (width < 10 || height < 10) {
-      console.log('Shape too small, ignoring (minimum 10x10)');
-      setDrawingState(initialDrawingState);
-      return;
-    }
-
-    // Validate canvas bounds
-    if (!canvasService.validateShapeBounds(x, y, width, height)) {
-      console.log('Shape outside canvas bounds, ignoring');
-      setDrawingState(initialDrawingState);
-      return;
-    }
-
     try {
-      await createShape({
-        type: 'rectangle',
-        x,
-        y,
-        width,
-        height,
-        color: selectedColor,
-      });
+      if (activeTool === 'circle') {
+        // Calculate circle properties from the drag
+        const circleProps = canvasService.calculateCircleFromDrag(
+          drawingState.startPoint.x,
+          drawingState.startPoint.y,
+          drawingState.currentPoint?.x || x,
+          drawingState.currentPoint?.y || y
+        );
+
+        // Validate minimum radius (5px)
+        if (circleProps.radius < 5) {
+          console.log('Circle too small, ignoring (minimum 5px radius)');
+          setDrawingState(initialDrawingState);
+          return;
+        }
+
+        // Validate circle bounds
+        if (!canvasService.validateCircleBounds(circleProps.x, circleProps.y, circleProps.radius)) {
+          console.log('Circle outside canvas bounds, ignoring');
+          setDrawingState(initialDrawingState);
+          return;
+        }
+
+        await canvasService.createCircle(
+          circleProps.x,
+          circleProps.y,
+          circleProps.radius,
+          selectedColor,
+          user!.uid
+        );
+      } else if (activeTool === 'triangle') {
+        // Validate minimum size (10x10 pixels)
+        if (width < 10 || height < 10) {
+          console.log('Triangle too small, ignoring (minimum 10x10)');
+          setDrawingState(initialDrawingState);
+          return;
+        }
+
+        // Validate canvas bounds
+        if (!canvasService.validateShapeBounds(x, y, width, height)) {
+          console.log('Triangle outside canvas bounds, ignoring');
+          setDrawingState(initialDrawingState);
+          return;
+        }
+
+        await canvasService.createTriangle(
+          x,
+          y,
+          width,
+          height,
+          selectedColor,
+          user!.uid
+        );
+      } else {
+        // Rectangle (existing logic)
+        // Validate minimum size (10x10 pixels)
+        if (width < 10 || height < 10) {
+          console.log('Rectangle too small, ignoring (minimum 10x10)');
+          setDrawingState(initialDrawingState);
+          return;
+        }
+
+        // Validate canvas bounds
+        if (!canvasService.validateShapeBounds(x, y, width, height)) {
+          console.log('Rectangle outside canvas bounds, ignoring');
+          setDrawingState(initialDrawingState);
+          return;
+        }
+
+        await createShape({
+          type: 'rectangle',
+          x,
+          y,
+          width,
+          height,
+          color: selectedColor,
+        });
+      }
 
       console.log('✅ Shape created successfully');
     } catch (error) {
@@ -232,7 +325,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     }
 
     setDrawingState(initialDrawingState);
-  }, [drawingState, selectedColor, createShape]);
+  }, [drawingState, selectedColor, createShape, activeTool, user]);
 
   const cancelDrawing = useCallback(() => {
     setDrawingState(initialDrawingState);
@@ -360,6 +453,8 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const value: CanvasState = {
     mode,
     setMode,
+    activeTool,
+    setActiveTool,
     selectedColor,
     setSelectedColor,
     shapes,
