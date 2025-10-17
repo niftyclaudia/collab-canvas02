@@ -3,22 +3,25 @@
  * Allows easy control of log levels and categories
  */
 
-export enum LogLevel {
-  ERROR = 0,
-  WARN = 1,
-  INFO = 2,
-  DEBUG = 3,
-  VERBOSE = 4
-}
+export const LogLevel = {
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3,
+  VERBOSE: 4
+} as const;
 
-export enum LogCategory {
-  AI = 'ai',
-  CANVAS = 'canvas',
-  AUTH = 'auth',
-  DATABASE = 'database',
-  RENDERING = 'rendering',
-  TESTING = 'testing'
-}
+export const LogCategory = {
+  AI: 'ai',
+  CANVAS: 'canvas',
+  AUTH: 'auth',
+  DATABASE: 'database',
+  RENDERING: 'rendering',
+  TESTING: 'testing'
+} as const;
+
+export type LogLevel = typeof LogLevel[keyof typeof LogLevel];
+export type LogCategory = typeof LogCategory[keyof typeof LogCategory];
 
 interface LogConfig {
   level: LogLevel;
@@ -33,8 +36,7 @@ class Logger {
       LogCategory.AI,
       LogCategory.CANVAS,
       LogCategory.AUTH,
-      LogCategory.DATABASE,
-      LogCategory.ERROR
+      LogCategory.DATABASE
     ]),
     showTimestamps: false
   };

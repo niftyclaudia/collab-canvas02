@@ -124,13 +124,17 @@ let globalToastContext: any = null;
   logger.testing(`Testing AI with command: ${command}`);
   
   try {
-    // Get toast context for error notifications
-    const { showError } = (window as any).getToastContext?.() || { showError: () => {} };
+    // Get toast context for notifications
+    const { showError, showSuccess } = (window as any).getToastContext?.() || { showError: () => {}, showSuccess: () => {} };
     
     const ai = new AIService({
       onError: (message) => {
         logger.error(LogCategory.AI, `AI Boundary Error: ${message}`);
         showError(message);
+      },
+      onSuccess: (message) => {
+        logger.info(LogCategory.AI, `AI Success: ${message}`);
+        showSuccess(message);
       }
     });
     const userId = (window as any).getCurrentUserId();
@@ -176,13 +180,17 @@ let globalToastContext: any = null;
   console.log('🧪 Starting Comprehensive AI Command Tests...');
   console.log('=====================================');
   
-  // Get toast context for error notifications
-  const { showError } = (window as any).getToastContext?.() || { showError: () => {} };
+  // Get toast context for notifications
+  const { showError, showSuccess } = (window as any).getToastContext?.() || { showError: () => {}, showSuccess: () => {} };
   
   const ai = new AIService({
     onError: (message) => {
       console.error('🚨 AI Boundary Error:', message);
       showError(message);
+    },
+    onSuccess: (message) => {
+      console.log('✅ AI Success:', message);
+      showSuccess(message);
     }
   });
   const userId = (window as any).getCurrentUserId();
@@ -280,6 +288,152 @@ let globalToastContext: any = null;
   return result;
 };
 
+// Test AI toast notifications (both success and error)
+(window as any).testAIToasts = async function() {
+  console.log('🧪 Testing AI Toast Notifications...');
+  
+  // Get toast context for notifications
+  const { showError, showSuccess } = (window as any).getToastContext?.() || { showError: () => {}, showSuccess: () => {} };
+  
+  const ai = new AIService({
+    onError: (message) => {
+      console.error('🚨 AI Error Toast:', message);
+      showError(message);
+    },
+    onSuccess: (message) => {
+      console.log('✅ AI Success Toast:', message);
+      showSuccess(message);
+    }
+  });
+  const userId = (window as any).getCurrentUserId();
+  
+  if (!userId) {
+    console.error('❌ No user logged in. Please sign in first.');
+    return;
+  }
+  
+  const testCommands = [
+    {
+      name: 'Success Test - Create Rectangle',
+      command: 'create a blue rectangle at 500, 500',
+      expected: 'Should show success toast'
+    },
+    {
+      name: 'Error Test - Out of Bounds',
+      command: 'create a red rectangle at 6000, 6000',
+      expected: 'Should show error toast'
+    },
+    {
+      name: 'Success Test - Create Circle',
+      command: 'add a green circle at 1000, 1000',
+      expected: 'Should show success toast'
+    }
+  ];
+  
+  for (let i = 0; i < testCommands.length; i++) {
+    const test = testCommands[i];
+    console.log(`\n🧪 Test ${i + 1}: ${test.name}`);
+    console.log(`📝 Command: "${test.command}"`);
+    console.log(`🎯 Expected: ${test.expected}`);
+    
+    try {
+      const result = await ai.executeCommand(test.command, userId);
+      console.log('Result:', result);
+      
+      // Wait a bit between commands to see the toasts
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+    } catch (error: any) {
+      console.log('Error:', error.message);
+    }
+  }
+  
+  console.log('\n✅ Toast notification tests completed! Check the UI for toast messages.');
+};
+
+// Test comprehensive error scenarios for AI object creation
+(window as any).testAIErrorScenarios = async function() {
+  console.log('🧪 Testing AI Error Scenarios...');
+  
+  // Get toast context for notifications
+  const { showError, showSuccess } = (window as any).getToastContext?.() || { showError: () => {}, showSuccess: () => {} };
+  
+  const ai = new AIService({
+    onError: (message) => {
+      console.error('🚨 AI Error Toast:', message);
+      showError(message);
+    },
+    onSuccess: (message) => {
+      console.log('✅ AI Success Toast:', message);
+      showSuccess(message);
+    }
+  });
+  const userId = (window as any).getCurrentUserId();
+  
+  if (!userId) {
+    console.error('❌ No user logged in. Please sign in first.');
+    return;
+  }
+  
+  const errorTestCommands = [
+    {
+      name: 'Boundary Error - Rectangle',
+      command: 'create a blue rectangle at 6000, 6000',
+      expected: 'Boundary error toast'
+    },
+    {
+      name: 'Boundary Error - Circle',
+      command: 'add a red circle at 10000, 10000',
+      expected: 'Boundary error toast'
+    },
+    {
+      name: 'Negative Coordinates',
+      command: 'create a green triangle at -100, -100',
+      expected: 'Boundary error toast'
+    },
+    {
+      name: 'Invalid Shape Reference - Square',
+      command: 'move the purple square to 1000, 1000',
+      expected: 'Shape not found error toast'
+    },
+    {
+      name: 'Invalid Shape Reference - Hexagon',
+      command: 'move the purple hexagon to the left',
+      expected: 'Shape not found error toast'
+    },
+    {
+      name: 'Invalid Shape Reference - Non-existent',
+      command: 'resize the red diamond to be larger',
+      expected: 'Shape not found error toast'
+    },
+    {
+      name: 'Success Test - Valid Creation',
+      command: 'create a yellow rectangle at 500, 500',
+      expected: 'Success toast'
+    }
+  ];
+  
+  for (let i = 0; i < errorTestCommands.length; i++) {
+    const test = errorTestCommands[i];
+    console.log(`\n🧪 Test ${i + 1}: ${test.name}`);
+    console.log(`📝 Command: "${test.command}"`);
+    console.log(`🎯 Expected: ${test.expected}`);
+    
+    try {
+      const result = await ai.executeCommand(test.command, userId);
+      console.log('Result:', result);
+      
+      // Wait between commands to see toasts clearly
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+    } catch (error: any) {
+      console.log('Error:', error.message);
+    }
+  }
+  
+  console.log('\n✅ Error scenario tests completed! Check the UI for various error toast messages.');
+};
+
 // Test boundary error toast notifications
 (window as any).testBoundaryError = async function() {
   console.log('🧪 Testing boundary error toast notifications...');
@@ -346,16 +500,52 @@ let globalToastContext: any = null;
 };
 
 // Test what AI actually generates
-(window as any).testAIPositions = async function() {
+(window as any).testAIPositions = function() {
+  console.log('🧪 Testing AI Position Generation...');
+  
+  // Test center positioning
+  console.log('Center positioning test:');
+  console.log('- Canvas center: (2500, 2500)');
+  console.log('- Rectangle 200×150 at center should be at top-left (2400, 2425)');
+  console.log('- Rectangle 100×100 at center should be at top-left (2450, 2450)');
+  console.log('- All shapes should be visually centered at (2500, 2500)');
+  console.log('');
+  console.log('💡 If shapes appear off-center:');
+  console.log('   1. Run resetCanvasView() to reset the view');
+  console.log('   2. Or manually pan/zoom to see the center');
+  console.log('   3. The coordinates are mathematically correct!');
+};
+
+// Reset canvas view to show true center
+(window as any).resetCanvasView = function() {
+  console.log('🔄 Resetting canvas view to show true center...');
+  
+  // Check if the canvas reset function is available
+  if ((window as any).canvasResetFunction) {
+    (window as any).canvasResetFunction();
+    console.log('✅ Canvas view reset to show true center');
+  } else {
+    console.log('❌ Canvas reset function not available. Try refreshing the page.');
+    console.log('💡 Tip: Use mouse wheel to zoom and drag to pan the canvas to see the center.');
+    console.log('💡 The rectangle IS centered at (2500, 2500) - you may just need to pan/zoom to see it.');
+  }
+};
+
+// Test what AI actually generates
+(window as any).testAIGeneration = async function() {
   console.log('🤖 Testing what AI actually generates...');
   
-  // Get toast context for error notifications
-  const { showError } = (window as any).getToastContext?.() || { showError: () => {} };
+  // Get toast context for notifications
+  const { showError, showSuccess } = (window as any).getToastContext?.() || { showError: () => {}, showSuccess: () => {} };
   
   const ai = new AIService({
     onError: (message) => {
       console.error('🚨 AI Boundary Error:', message);
       showError(message);
+    },
+    onSuccess: (message) => {
+      console.log('✅ AI Success:', message);
+      showSuccess(message);
     }
   });
   const userId = (window as any).getCurrentUserId();

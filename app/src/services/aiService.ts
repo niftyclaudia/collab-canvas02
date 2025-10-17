@@ -11,12 +11,14 @@ interface CommandResult {
 
 interface AIServiceOptions {
   onError?: (message: string) => void;
+  onSuccess?: (message: string) => void;
 }
 
 export class AIService {
   private openai: OpenAI;
   private canvasService: CanvasService;
   private onError?: (message: string) => void;
+  private onSuccess?: (message: string) => void;
   
   constructor(options?: AIServiceOptions) {
     this.openai = new OpenAI({
@@ -25,6 +27,7 @@ export class AIService {
     });
     this.canvasService = new CanvasService();
     this.onError = options?.onError;
+    this.onSuccess = options?.onSuccess;
   }
   
   async executeCommand(prompt: string, userId: string): Promise<CommandResult> {
@@ -54,27 +57,64 @@ export class AIService {
         // Check if only getCanvasState was called (indicates shape not found)
         const onlyGetCanvasState = results.length === 1 && results[0].tool === 'getCanvasState';
         if (onlyGetCanvasState) {
+          const notFoundMessage = message.content || "I couldn't find the requested shape on the canvas.";
+          
+          // Show toast notification for shape not found
+          if (this.onError) {
+            this.onError(`⚠️ ${notFoundMessage}`);
+          }
+          
           return {
             success: false,
-            message: message.content || "I couldn't find the requested shape on the canvas.",
+            message: notFoundMessage,
             toolCalls: results
           };
         }
         
+        const successMessage = this.generateSuccessMessage(results);
+        
+        // Show success toast for object modifications
+        if (this.onSuccess && this.hasObjectModifications(results)) {
+          this.onSuccess(successMessage);
+        }
+        
         return {
           success: true,
-          message: this.generateSuccessMessage(results),
+          message: successMessage,
           toolCalls: results
         };
       } else {
+        const notUnderstoodMessage = message.content || "I couldn't understand that command.";
+        
+        // Show toast notification for commands that couldn't be understood
+        if (this.onError) {
+          this.onError(`⚠️ ${notUnderstoodMessage}`);
+        }
+        
         return {
           success: false,
-          message: message.content || "I couldn't understand that command.",
+          message: notUnderstoodMessage,
           toolCalls: []
         };
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI execution error:', error);
+      
+      // Show toast notification for general AI service errors
+      if (this.onError) {
+        let errorMessage = "⚠️ AI service error. Please try again.";
+        
+        if (error.message && error.message.includes('API key')) {
+          errorMessage = "⚠️ AI service not configured. Please check API key.";
+        } else if (error.message && error.message.includes('network')) {
+          errorMessage = "⚠️ Network error. Please check your connection.";
+        } else if (error.message && error.message.includes('quota')) {
+          errorMessage = "⚠️ AI service quota exceeded. Please try again later.";
+        }
+        
+        this.onError(errorMessage);
+      }
+      
       return {
         success: false,
         message: "⚠️ AI service error. Please try again.",
@@ -94,9 +134,22 @@ export class AIService {
           result: result
         });
       } catch (error: any) {
-        // Check if it's a boundary error and show toast notification
-        if (error.message && error.message.includes('outside canvas bounds')) {
-          this.onError?.(`⚠️ Cannot create shape: ${error.message}`);
+        // Show toast notification for any object creation/modification error
+        if (this.onError && this.isObjectModificationTool(call.function.name)) {
+          let errorMessage = error.message || 'Unknown error occurred';
+          
+          // Format error message for better user experience
+          if (error.message && error.message.includes('outside canvas bounds')) {
+            errorMessage = `⚠️ Cannot create shape: ${error.message}`;
+          } else if (error.message && error.message.includes('Firebase')) {
+            errorMessage = `⚠️ Database error: Unable to save shape`;
+          } else if (error.message && error.message.includes('network')) {
+            errorMessage = `⚠️ Network error: Unable to create shape`;
+          } else {
+            errorMessage = `⚠️ Cannot ${this.getActionName(call.function.name)}: ${error.message}`;
+          }
+          
+          this.onError(errorMessage);
         }
         
         results.push({
@@ -163,9 +216,29 @@ export class AIService {
         
       // NEW MANIPULATION TOOLS
       case 'moveShape':
+        // Get the current shape to determine its type and dimensions
+        const shapes = await this.canvasService.getShapes();
+        const targetShape = shapes.find(s => s.id === args.shapeId);
+        
+        if (!targetShape) {
+          throw new Error(`Shape with ID ${args.shapeId} not found`);
+        }
+        
+        let finalX = args.x;
+        let finalY = args.y;
+        
+        // For rectangles and triangles, convert center coordinates to top-left coordinates
+        if (targetShape.type === 'rectangle' || targetShape.type === 'triangle') {
+          finalX = args.x - targetShape.width / 2;
+          finalY = args.y - targetShape.height / 2;
+          console.log(`🔧 [AI] Converting center (${args.x}, ${args.y}) to top-left (${finalX}, ${finalY}) for ${targetShape.type} ${targetShape.width}×${targetShape.height}`);
+        } else {
+          console.log(`🔧 [AI] Using center coordinates (${args.x}, ${args.y}) directly for ${targetShape.type}`);
+        }
+        
         return await this.canvasService.updateShape(args.shapeId, {
-          x: args.x,
-          y: args.y
+          x: finalX,
+          y: finalY
         });
         
       case 'resizeShape':
@@ -199,6 +272,36 @@ export class AIService {
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+  }
+  
+  private isObjectModificationTool(toolName: string): boolean {
+    // Check if the tool modifies objects (not just getCanvasState)
+    return ['createRectangle', 'createCircle', 'createTriangle', 'createText', 
+            'moveShape', 'resizeShape', 'rotateShape', 'duplicateShape', 'deleteShape'].includes(toolName);
+  }
+  
+  private getActionName(toolName: string): string {
+    const actionMap: { [key: string]: string } = {
+      'createRectangle': 'create rectangle',
+      'createCircle': 'create circle', 
+      'createTriangle': 'create triangle',
+      'createText': 'create text',
+      'moveShape': 'move shape',
+      'resizeShape': 'resize shape',
+      'rotateShape': 'rotate shape',
+      'duplicateShape': 'duplicate shape',
+      'deleteShape': 'delete shape'
+    };
+    return actionMap[toolName] || 'perform action';
+  }
+  
+  private hasObjectModifications(results: any[]): boolean {
+    // Check if any tool calls actually modified objects (not just getCanvasState)
+    return results.some(result => 
+      result.success && 
+      result.tool !== 'getCanvasState' &&
+      this.isObjectModificationTool(result.tool)
+    );
   }
   
   private generateSuccessMessage(results: any[]): string {
@@ -287,8 +390,8 @@ export class AIService {
           parameters: {
             type: "object",
             properties: {
-              x: { type: "number", description: "Top vertex X position in pixels (0-5000)" },
-              y: { type: "number", description: "Top vertex Y position in pixels (0-5000)" },
+              x: { type: "number", description: "Top-left X position of bounding box in pixels (0-5000)" },
+              y: { type: "number", description: "Top-left Y position of bounding box in pixels (0-5000)" },
               width: { type: "number", description: "Base width in pixels (minimum 10)" },
               height: { type: "number", description: "Height in pixels (minimum 10)" },
               color: { type: "string", description: "Hex color code like #10b981" }
@@ -336,13 +439,13 @@ export class AIService {
         type: "function" as const,
         function: {
           name: "moveShape",
-          description: "Moves an existing shape to a new position. MUST call getCanvasState first to find the shapeId.",
+          description: "Moves an existing shape to a new position. For center positioning, use (2500, 2500). The system handles coordinate conversion automatically.",
           parameters: {
             type: "object",
             properties: {
               shapeId: { type: "string", description: "ID of the shape to move" },
-              x: { type: "number", description: "New X position" },
-              y: { type: "number", description: "New Y position" }
+              x: { type: "number", description: "New X position (center coordinates for all shapes)" },
+              y: { type: "number", description: "New Y position (center coordinates for all shapes)" }
             },
             required: ["shapeId", "x", "y"]
           }

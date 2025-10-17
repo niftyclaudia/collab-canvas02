@@ -8,7 +8,7 @@ import { useCanvas } from '../../hooks/useCanvas';
 import { CursorLayer } from '../Collaboration/CursorLayer';
 import { canvasService } from '../../services/canvasService';
 import type { Shape } from '../../services/canvasService';
-import { logger, LogCategory } from '../../utils/logger';
+import { logger } from '../../utils/logger';
 
 // Constants for rotation handles
 const ROTATION_HANDLE_DISTANCE = 150; // Distance from shape top to rotation handle
@@ -165,6 +165,22 @@ export function Canvas() {
   useEffect(() => {
     return () => {
       shapeNodesRef.current.clear();
+    };
+  }, []);
+
+  // Register canvas reset function globally for debugging
+  useEffect(() => {
+    (window as any).canvasResetFunction = () => {
+      const stage = stageRef.current;
+      if (stage) {
+        stage.position({ x: 0, y: 0 });
+        stage.scale({ x: 1, y: 1 });
+        stage.batchDraw();
+      }
+    };
+    
+    return () => {
+      delete (window as any).canvasResetFunction;
     };
   }, []);
 
