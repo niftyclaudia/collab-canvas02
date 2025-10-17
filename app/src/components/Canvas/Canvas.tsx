@@ -494,21 +494,20 @@ export function Canvas() {
     const centerY = node.y();
     
     if (shape.type === 'circle') {
-      // For circles, use the same logic as rectangles (top-left coordinates)
-      const topLeftX = centerX - shape.width / 2;
-      const topLeftY = centerY - shape.height / 2;
+      // For circles, use center coordinates directly
+      const radius = shape.radius || shape.width / 2;
       
-      // Clamp position to canvas boundaries in real-time
+      // Clamp position to canvas boundaries in real-time using center coordinates
       const clampedPosition = canvasService.clampShapeToCanvas(
-        topLeftX, 
-        topLeftY, 
-        shape.width, 
-        shape.height
+        centerX - radius, 
+        centerY - radius, 
+        radius * 2, 
+        radius * 2
       );
       
       // Convert back to center coordinates
-      const clampedCenterX = clampedPosition.x + shape.width / 2;
-      const clampedCenterY = clampedPosition.y + shape.height / 2;
+      const clampedCenterX = clampedPosition.x + radius;
+      const clampedCenterY = clampedPosition.y + radius;
       
       // Only update position if it was clamped
       if (clampedCenterX !== centerX || clampedCenterY !== centerY) {
@@ -551,21 +550,20 @@ export function Canvas() {
     let finalPosition;
     
     if (shape.type === 'circle') {
-      // For circles, use the same logic as rectangles (top-left coordinates)
-      const topLeftX = centerX - shape.width / 2;
-      const topLeftY = centerY - shape.height / 2;
+      // For circles, use center coordinates directly
+      const radius = shape.radius || shape.width / 2;
       
-      // Validate and clamp final position
+      // Validate and clamp final position using center coordinates
       const validatedPosition = canvasService.validateShapePosition(
-        topLeftX,
-        topLeftY,
-        shape.width,
-        shape.height
+        centerX - radius,
+        centerY - radius,
+        radius * 2,
+        radius * 2
       );
       
       // Convert back to center coordinates
-      const finalCenterX = validatedPosition.x + shape.width / 2;
-      const finalCenterY = validatedPosition.y + shape.height / 2;
+      const finalCenterX = validatedPosition.x + radius;
+      const finalCenterY = validatedPosition.y + radius;
       
       // Apply clamped position if needed
       if (validatedPosition.wasClamped) {
@@ -575,8 +573,8 @@ export function Canvas() {
       }
       
       finalPosition = {
-        x: validatedPosition.x,
-        y: validatedPosition.y,
+        x: finalCenterX,
+        y: finalCenterY,
       };
     } else {
       // For rectangles, convert center coordinates to top-left coordinates
@@ -1467,8 +1465,8 @@ export function Canvas() {
                     
                     {shape.type === 'circle' && (
                       <Circle
-                        x={displayWidth / 2}
-                        y={displayHeight / 2}
+                        x={0}
+                        y={0}
                         radius={Math.min(displayWidth, displayHeight) / 2}
                         fill={shape.color}
                         stroke={strokeColor}
@@ -1507,7 +1505,7 @@ export function Canvas() {
                       
                       // Define resize handles using local coordinates (relative to shape center)
                       const handles = shape.type === 'circle' ? [
-                        // For circles, show only 4 handles at cardinal directions
+                        // For circles, show only 4 handles at cardinal directions on the circumference
                         { x: -offset, y: -displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
                         { x: -displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
                         { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
