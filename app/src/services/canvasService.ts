@@ -451,8 +451,8 @@ export class CanvasService {
 
   /**
    * Create a circle shape
-   * @param x - Top-left X coordinate
-   * @param y - Top-left Y coordinate
+   * @param x - Top-left X coordinate (will be converted to center)
+   * @param y - Top-left Y coordinate (will be converted to center)
    * @param width - Circle width (diameter)
    * @param height - Circle height (diameter)
    * @param color - Circle color
@@ -465,20 +465,23 @@ export class CanvasService {
       throw new Error('Minimum circle size is 10×10 pixels');
     }
 
-    // Validate circle bounds (using top-left coordinates)
-    const boundsCheck = this.validateShapeBounds(x, y, width, height);
-    
-    if (!boundsCheck) {
+    // Convert from top-left to center coordinates for storage
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    const radius = Math.min(width, height) / 2;
+
+    // Validate circle bounds using center coordinates
+    if (!this.validateCircleBounds(centerX, centerY, radius)) {
       throw new Error('Circle would be outside canvas bounds');
     }
 
     const shapeData: CreateShapeData = {
       type: 'circle',
-      x,
-      y,
+      x: centerX, // Store center coordinates
+      y: centerY, // Store center coordinates
       width,
       height,
-      radius: Math.min(width, height) / 2, // Store radius for compatibility
+      radius: radius, // Store radius for compatibility
       color,
       createdBy,
     };

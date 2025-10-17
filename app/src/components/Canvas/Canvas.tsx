@@ -498,21 +498,12 @@ export function Canvas() {
       const radius = shape.radius || shape.width / 2;
       
       // Clamp position to canvas boundaries in real-time using center coordinates
-      const clampedPosition = canvasService.clampShapeToCanvas(
-        centerX - radius, 
-        centerY - radius, 
-        radius * 2, 
-        radius * 2
-      );
-      
-      // Convert back to center coordinates
-      const clampedCenterX = clampedPosition.x + radius;
-      const clampedCenterY = clampedPosition.y + radius;
+      const clampedPosition = canvasService.clampCircleToCanvas(centerX, centerY, radius);
       
       // Only update position if it was clamped
-      if (clampedCenterX !== centerX || clampedCenterY !== centerY) {
-        node.x(clampedCenterX);
-        node.y(clampedCenterY);
+      if (clampedPosition.x !== centerX || clampedPosition.y !== centerY) {
+        node.x(clampedPosition.x);
+        node.y(clampedPosition.y);
       }
     } else {
       // For rectangles, convert center coordinates to top-left coordinates
@@ -554,27 +545,18 @@ export function Canvas() {
       const radius = shape.radius || shape.width / 2;
       
       // Validate and clamp final position using center coordinates
-      const validatedPosition = canvasService.validateShapePosition(
-        centerX - radius,
-        centerY - radius,
-        radius * 2,
-        radius * 2
-      );
-      
-      // Convert back to center coordinates
-      const finalCenterX = validatedPosition.x + radius;
-      const finalCenterY = validatedPosition.y + radius;
+      const clampedPosition = canvasService.clampCircleToCanvas(centerX, centerY, radius);
       
       // Apply clamped position if needed
-      if (validatedPosition.wasClamped) {
-        node.x(finalCenterX);
-        node.y(finalCenterY);
+      if (clampedPosition.x !== centerX || clampedPosition.y !== centerY) {
+        node.x(clampedPosition.x);
+        node.y(clampedPosition.y);
         console.log('🔒 Circle position clamped to canvas bounds');
       }
       
       finalPosition = {
-        x: finalCenterX,
-        y: finalCenterY,
+        x: clampedPosition.x,
+        y: clampedPosition.y,
       };
     } else {
       // For rectangles, convert center coordinates to top-left coordinates
@@ -818,6 +800,7 @@ export function Canvas() {
       
       if (resizingShape.type === 'circle') {
         // For circles, edge handles should maintain aspect ratio (circles are always round)
+        // The center should remain fixed during resize
         
         switch (direction) {
           case 't': // Top edge: calculate distance from center
@@ -828,6 +811,7 @@ export function Canvas() {
               const newRadius = Math.max(5, distance);
               newWidth = newRadius * 2;
               newHeight = newRadius * 2;
+              // Keep the center fixed - calculate new top-left position
               newX = centerX - newRadius;
               newY = centerY - newRadius;
             }
@@ -840,6 +824,7 @@ export function Canvas() {
               const newRadius = Math.max(5, distance);
               newWidth = newRadius * 2;
               newHeight = newRadius * 2;
+              // Keep the center fixed - calculate new top-left position
               newX = centerX - newRadius;
               newY = centerY - newRadius;
             }
@@ -852,6 +837,7 @@ export function Canvas() {
               const newRadius = Math.max(5, distance);
               newWidth = newRadius * 2;
               newHeight = newRadius * 2;
+              // Keep the center fixed - calculate new top-left position
               newX = centerX - newRadius;
               newY = centerY - newRadius;
             }
@@ -864,6 +850,7 @@ export function Canvas() {
               const newRadius = Math.max(5, distance);
               newWidth = newRadius * 2;
               newHeight = newRadius * 2;
+              // Keep the center fixed - calculate new top-left position
               newX = centerX - newRadius;
               newY = centerY - newRadius;
             }
@@ -955,13 +942,8 @@ export function Canvas() {
         const newRadius = previewDimensions.width / 2;
         await canvasService.resizeCircle(activeHandle.shapeId, newRadius);
         
-        // Update position if it changed
-        if (resizeStart && (previewDimensions.x !== resizeStart.shapeX || previewDimensions.y !== resizeStart.shapeY)) {
-          await updateShape(activeHandle.shapeId, {
-            x: previewDimensions.x + newRadius, // Convert back to center coordinates
-            y: previewDimensions.y + newRadius
-          });
-        }
+        // For circles, the center should remain fixed during resize
+        // No position update needed since the center stays the same
       } else {
         // For rectangles, use resizeShape method
         await canvasService.resizeShape(
@@ -1437,8 +1419,8 @@ export function Canvas() {
                         shapeNodesRef.current.delete(shape.id);
                       }
                     }}
-                    x={hasOptimisticUpdate ? displayX + displayWidth / 2 : (shape.type === 'circle' ? shape.x + shape.width / 2 : shape.x + shape.width / 2)}
-                    y={hasOptimisticUpdate ? displayY + displayHeight / 2 : (shape.type === 'circle' ? shape.y + shape.height / 2 : shape.y + shape.height / 2)}
+                    x={hasOptimisticUpdate ? displayX + displayWidth / 2 : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2)}
+                    y={hasOptimisticUpdate ? displayY + displayHeight / 2 : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2)}
                     offsetX={0}
                     offsetY={0}
                     rotation={currentRotation}
@@ -1613,7 +1595,7 @@ export function Canvas() {
                   {/* Lock icon for shapes locked by others */}
                   {lockStatus === 'locked-by-other' && (
                     <Text
-                      x={shape.type === 'circle' ? shape.x + (shape.radius || shape.width / 2) - 20 : shape.x + shape.width - 20}
+                      x={shape.type === 'circle' ? shape.x - 20 : shape.x + shape.width - 20}
                       y={shape.type === 'circle' ? shape.y - (shape.radius || shape.width / 2) + 5 : shape.y + 5}
                       text="🔒"
                       fontSize={16}
