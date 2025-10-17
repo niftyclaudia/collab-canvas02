@@ -421,14 +421,20 @@ export class CanvasService {
 
   /**
    * Calculate circle properties from drag coordinates
-   * Returns center point and radius
+   * Returns top-left coordinates and dimensions (like rectangles)
+   * The circle is created by dragging from one corner to the opposite corner
    */
   calculateCircleFromDrag(startX: number, startY: number, endX: number, endY: number) {
-    const centerX = (startX + endX) / 2;
-    const centerY = (startY + endY) / 2;
-    const radius = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)) / 2;
+    // Calculate the bounding box (like rectangles)
+    const x = Math.min(startX, endX);
+    const y = Math.min(startY, endY);
+    const width = Math.abs(endX - startX);
+    const height = Math.abs(endY - startY);
     
-    return { x: centerX, y: centerY, radius };
+    // For circles, use the smaller dimension to ensure it fits
+    const size = Math.min(width, height);
+    
+    return { x, y, width: size, height: size };
   }
 
   /**
@@ -446,21 +452,22 @@ export class CanvasService {
 
   /**
    * Create a circle shape
-   * @param x - Center X coordinate
-   * @param y - Center Y coordinate
-   * @param radius - Circle radius
+   * @param x - Top-left X coordinate
+   * @param y - Top-left Y coordinate
+   * @param width - Circle width (diameter)
+   * @param height - Circle height (diameter)
    * @param color - Circle color
    * @param createdBy - User ID who created the circle
    */
-  async createCircle(x: number, y: number, radius: number, color: string, createdBy: string): Promise<Shape> {
+  async createCircle(x: number, y: number, width: number, height: number, color: string, createdBy: string): Promise<Shape> {
     
-    // Validate minimum radius (5px)
-    if (radius < 5) {
-      throw new Error('Minimum circle radius is 5 pixels');
+    // Validate minimum size (10px diameter)
+    if (width < 10 || height < 10) {
+      throw new Error('Minimum circle size is 10×10 pixels');
     }
 
-    // Validate circle bounds
-    const boundsCheck = this.validateCircleBounds(x, y, radius);
+    // Validate circle bounds (using top-left coordinates)
+    const boundsCheck = this.validateShapeBounds(x, y, width, height);
     
     if (!boundsCheck) {
       throw new Error('Circle would be outside canvas bounds');
@@ -470,9 +477,9 @@ export class CanvasService {
       type: 'circle',
       x,
       y,
-      width: radius * 2, // Store diameter as width for bounding box
-      height: radius * 2, // Store diameter as height for bounding box
-      radius,
+      width,
+      height,
+      radius: Math.min(width, height) / 2, // Store radius for compatibility
       color,
       createdBy,
     };

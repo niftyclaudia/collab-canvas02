@@ -175,27 +175,28 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       let constrainedShape;
 
       if (activeTool === 'circle') {
-        // Calculate circle properties
-        const circleProps = canvasService.calculateCircleFromDrag(
+        // For circles, use the same bounding box logic as rectangles
+        normalized = canvasService.normalizeRectangle(
           prev.startPoint.x,
           prev.startPoint.y,
           x,
           y
         );
 
-        // Clamp circle to canvas bounds
-        clampedPosition = canvasService.clampCircleToCanvas(
-          circleProps.x,
-          circleProps.y,
-          circleProps.radius
+        // Clamp preview shape to canvas bounds
+        clampedPosition = canvasService.clampShapeToCanvas(
+          normalized.x,
+          normalized.y,
+          normalized.width,
+          normalized.height
         );
 
-        // Create constrained preview shape (using bounding box for preview)
+        // Create constrained preview shape (bounding box for circle preview)
         constrainedShape = {
-          x: clampedPosition.x - circleProps.radius,
-          y: clampedPosition.y - circleProps.radius,
-          width: circleProps.radius * 2,
-          height: circleProps.radius * 2,
+          x: clampedPosition.x,
+          y: clampedPosition.y,
+          width: Math.min(normalized.width, CANVAS_WIDTH - clampedPosition.x),
+          height: Math.min(normalized.height, CANVAS_HEIGHT - clampedPosition.y),
         };
       } else {
         // For rectangles and triangles, use the same logic
@@ -241,32 +242,36 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
 
     try {
       if (activeTool === 'circle') {
-        // Calculate circle properties from the drag
-        const circleProps = canvasService.calculateCircleFromDrag(
+        // For circles, use the same bounding box logic as rectangles
+        const normalized = canvasService.normalizeRectangle(
           drawingState.startPoint.x,
           drawingState.startPoint.y,
-          drawingState.currentPoint?.x || x,
-          drawingState.currentPoint?.y || y
+          drawingState.currentPoint.x,
+          drawingState.currentPoint.y
         );
 
-        // Validate minimum radius (5px)
-        if (circleProps.radius < 5) {
-          console.log('Circle too small, ignoring (minimum 5px radius)');
+        // Calculate circle properties from the bounding box (same as preview)
+        const size = Math.min(normalized.width, normalized.height);
+
+        // Validate minimum size (10px)
+        if (size < 10) {
+          console.log('Circle too small, ignoring (minimum 10px)');
           setDrawingState(initialDrawingState);
           return;
         }
 
         // Validate circle bounds
-        if (!canvasService.validateCircleBounds(circleProps.x, circleProps.y, circleProps.radius)) {
+        if (!canvasService.validateShapeBounds(normalized.x, normalized.y, size, size)) {
           console.log('Circle outside canvas bounds, ignoring');
           setDrawingState(initialDrawingState);
           return;
         }
 
         await canvasService.createCircle(
-          circleProps.x,
-          circleProps.y,
-          circleProps.radius,
+          normalized.x,
+          normalized.y,
+          size,
+          size,
           selectedColor,
           user!.uid
         );

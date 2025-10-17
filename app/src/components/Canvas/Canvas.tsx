@@ -494,17 +494,29 @@ export function Canvas() {
     const centerY = node.y();
     
     if (shape.type === 'circle') {
-      // For circles, use circle-specific clamping
-      const radius = shape.radius || shape.width / 2;
-      const clampedPosition = canvasService.clampCircleToCanvas(centerX, centerY, radius);
+      // For circles, use the same logic as rectangles (top-left coordinates)
+      const topLeftX = centerX - shape.width / 2;
+      const topLeftY = centerY - shape.height / 2;
+      
+      // Clamp position to canvas boundaries in real-time
+      const clampedPosition = canvasService.clampShapeToCanvas(
+        topLeftX, 
+        topLeftY, 
+        shape.width, 
+        shape.height
+      );
+      
+      // Convert back to center coordinates
+      const clampedCenterX = clampedPosition.x + shape.width / 2;
+      const clampedCenterY = clampedPosition.y + shape.height / 2;
       
       // Only update position if it was clamped
-      if (clampedPosition.x !== centerX || clampedPosition.y !== centerY) {
-        node.x(clampedPosition.x);
-        node.y(clampedPosition.y);
+      if (clampedCenterX !== centerX || clampedCenterY !== centerY) {
+        node.x(clampedCenterX);
+        node.y(clampedCenterY);
       }
     } else {
-      // For rectangles and triangles, convert center coordinates to top-left coordinates
+      // For rectangles, convert center coordinates to top-left coordinates
       const topLeftX = centerX - shape.width / 2;
       const topLeftY = centerY - shape.height / 2;
       
@@ -539,24 +551,35 @@ export function Canvas() {
     let finalPosition;
     
     if (shape.type === 'circle') {
-      // For circles, validate using circle bounds
-      const radius = shape.radius || shape.width / 2;
-      const clampedPosition = canvasService.clampCircleToCanvas(centerX, centerY, radius);
+      // For circles, use the same logic as rectangles (top-left coordinates)
+      const topLeftX = centerX - shape.width / 2;
+      const topLeftY = centerY - shape.height / 2;
+      
+      // Validate and clamp final position
+      const validatedPosition = canvasService.validateShapePosition(
+        topLeftX,
+        topLeftY,
+        shape.width,
+        shape.height
+      );
+      
+      // Convert back to center coordinates
+      const finalCenterX = validatedPosition.x + shape.width / 2;
+      const finalCenterY = validatedPosition.y + shape.height / 2;
       
       // Apply clamped position if needed
-      if (clampedPosition.x !== centerX || clampedPosition.y !== centerY) {
-        node.x(clampedPosition.x);
-        node.y(clampedPosition.y);
+      if (validatedPosition.wasClamped) {
+        node.x(finalCenterX);
+        node.y(finalCenterY);
         console.log('🔒 Circle position clamped to canvas bounds');
       }
       
-      // Store center coordinates for circles
       finalPosition = {
-        x: clampedPosition.x,
-        y: clampedPosition.y,
+        x: validatedPosition.x,
+        y: validatedPosition.y,
       };
     } else {
-      // For rectangles and triangles, convert center coordinates to top-left coordinates
+      // For rectangles, convert center coordinates to top-left coordinates
       const topLeftX = centerX - shape.width / 2;
       const topLeftY = centerY - shape.height / 2;
       
@@ -648,7 +671,7 @@ export function Canvas() {
       shapeHeight = radius * 2;
       aspectRatio = 1; // Circles are always square
     } else {
-      // For rectangles and triangles, use bounding box
+      // For rectangles, use top-left coordinates
       const centerX = shapeNode ? shapeNode.x() : (shape.x + shape.width / 2);
       const centerY = shapeNode ? shapeNode.y() : (shape.y + shape.height / 2);
       
@@ -942,7 +965,7 @@ export function Canvas() {
           });
         }
       } else {
-        // For rectangles and triangles, use resizeShape method
+        // For rectangles, use resizeShape method
         await canvasService.resizeShape(
           activeHandle.shapeId,
           previewDimensions.width,
@@ -1190,8 +1213,25 @@ export function Canvas() {
     
     // Handle drawing
     if (!drawingState.isDrawing) return;
+    
+    // Capture the final mouse position for accurate shape creation
+    const stage = stageRef.current;
+    if (stage) {
+      const pos = stage.getPointerPosition();
+      if (pos) {
+        // Convert screen coordinates to canvas coordinates
+        const canvasPos = {
+          x: (pos.x - stage.x()) / stage.scaleX(),
+          y: (pos.y - stage.y()) / stage.scaleY(),
+        };
+        
+        // Update the drawing state with the final position before finishing
+        updateDrawing(canvasPos.x, canvasPos.y);
+      }
+    }
+    
     finishDrawing();
-  }, [rotationState.isRotating, handleRotationEnd, isResizing, handleResizeEnd, drawingState.isDrawing, finishDrawing]);
+  }, [rotationState.isRotating, handleRotationEnd, isResizing, handleResizeEnd, drawingState.isDrawing, updateDrawing, finishDrawing]);
 
   // Cancel drawing on Escape key
   useEffect(() => {
@@ -1369,16 +1409,10 @@ export function Canvas() {
                         shapeNodesRef.current.delete(shape.id);
                       }
                     }}
-                    x={shape.type === 'circle' 
-                      ? (hasOptimisticUpdate ? displayX + displayWidth / 2 : shape.x)
-                      : (hasOptimisticUpdate ? displayX + displayWidth / 2 : shape.x + shape.width / 2)
-                    }
-                    y={shape.type === 'circle' 
-                      ? (hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y)
-                      : (hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y + shape.height / 2)
-                    }
-                    offsetX={-displayWidth / 2}
-                    offsetY={-displayHeight / 2}
+                    x={hasOptimisticUpdate ? displayX : shape.x}
+                    y={hasOptimisticUpdate ? displayY : shape.y}
+                    offsetX={0}
+                    offsetY={0}
                     rotation={currentRotation}
                     draggable={isDraggable && !hasOptimisticUpdate}
                     onClick={(e) => handleShapeClick(e, shape)}
@@ -1389,8 +1423,8 @@ export function Canvas() {
                     {/* Render shape based on type */}
                     {shape.type === 'rectangle' && (
                       <Rect
-                        x={-displayWidth / 2}
-                        y={-displayHeight / 2}
+                        x={0}
+                        y={0}
                         width={displayWidth}
                         height={displayHeight}
                         fill={shape.color}
@@ -1403,9 +1437,9 @@ export function Canvas() {
                     
                     {shape.type === 'circle' && (
                       <Circle
-                        x={0}
-                        y={0}
-                        radius={displayWidth / 2}
+                        x={displayWidth / 2}
+                        y={displayHeight / 2}
+                        radius={Math.min(displayWidth, displayHeight) / 2}
                         fill={shape.color}
                         stroke={strokeColor}
                         strokeWidth={strokeWidth}
@@ -1416,7 +1450,9 @@ export function Canvas() {
                     
                     {shape.type === 'triangle' && (() => {
                       const vertices = calculateTriangleVertices(displayWidth, displayHeight);
-                      const points = vertices.flatMap(v => [v.x, v.y]);
+                      // For triangles, position vertices relative to top-left corner (like rectangles)
+                      // This makes the triangle appear where the user started dragging
+                      const points = vertices.flatMap(v => [v.x + displayWidth / 2, v.y + displayHeight / 2]);
                       return (
                         <Line
                           points={points}
@@ -1448,15 +1484,15 @@ export function Canvas() {
                         { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
                         { x: -offset, y: displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
                       ] : [
-                        // For rectangles and triangles, show all 8 handles
-                        { x: -displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
-                        { x: -offset, y: -displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
-                        { x: displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-tr` },
-                        { x: -displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
-                        { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
-                        { x: -displayWidth / 2 - offset, y: displayHeight / 2 - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-bl` },
-                        { x: -offset, y: displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
-                        { x: displayWidth / 2 - offset, y: displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-br` },
+                        // For rectangles and triangles, show all 8 handles (positioned relative to top-left)
+                        { x: -offset, y: -offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
+                        { x: displayWidth / 2 - offset, y: -offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
+                        { x: displayWidth - offset, y: -offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-tr` },
+                        { x: -offset, y: displayHeight / 2 - offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
+                        { x: displayWidth - offset, y: displayHeight / 2 - offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
+                        { x: -offset, y: displayHeight - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-bl` },
+                        { x: displayWidth / 2 - offset, y: displayHeight - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
+                        { x: displayWidth - offset, y: displayHeight - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-br` },
                       ];
                       
                       return handles.map((handle) => {
@@ -1488,9 +1524,8 @@ export function Canvas() {
                       const stageScale = stage ? stage.scaleX() : 1;
                       
                       
-                      // Position rotation handle above shape center using local coordinates
-                      // Since the shape rectangle is at y={-displayHeight / 2}, we need to go further up
-                      const handleY = -ROTATION_HANDLE_DISTANCE - (displayHeight / 2); // Above the shape top edge
+                      // Position rotation handle above shape top edge using local coordinates
+                      const handleY = -ROTATION_HANDLE_DISTANCE; // Above the shape top edge
                       const handleSize = 16 / stageScale; // 16px diameter, scaled with zoom
                       const handleRadius = handleSize / 2;
                       
@@ -1503,7 +1538,7 @@ export function Canvas() {
                         <React.Fragment key={`rotation-${shape.id}`}>
                           {/* Connecting line from handle to shape top edge */}
                           <Line
-                            points={[0, handleY, 0, -displayHeight / 2]}
+                            points={[0, handleY, 0, 0]}
                             stroke="#ff0000"
                             strokeWidth={3 / stageScale}
                             dash={[5 / stageScale, 5 / stageScale]}
@@ -1564,10 +1599,11 @@ export function Canvas() {
               const { x, y, width, height } = drawingState.previewShape;
               
               if (activeTool === 'circle') {
-                // For circles, calculate center and radius from the preview bounding box
-                const centerX = x + width / 2;
-                const centerY = y + height / 2;
-                const radius = Math.min(width, height) / 2;
+                // For circles, render circle centered within the bounding box
+                const size = Math.min(width, height);
+                const centerX = x + size / 2;
+                const centerY = y + size / 2;
+                const radius = size / 2;
                 
                 return (
                   <Circle
