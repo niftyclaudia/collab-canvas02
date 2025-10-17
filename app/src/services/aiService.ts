@@ -186,7 +186,8 @@ export class AIService {
         return await this.canvasService.createCircle(
           args.x,
           args.y,
-          args.radius,
+          args.radius * 2, // width (diameter)
+          args.radius * 2, // height (diameter)
           args.color,
           userId
         );

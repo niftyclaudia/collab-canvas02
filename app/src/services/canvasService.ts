@@ -14,7 +14,6 @@ import {
 } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
-import { logger } from '../utils/logger';
 
 // Shape interface matching the data model from task.md
 export interface Shape {
@@ -421,14 +420,20 @@ export class CanvasService {
 
   /**
    * Calculate circle properties from drag coordinates
-   * Returns center point and radius
+   * Returns top-left coordinates and dimensions (like rectangles)
+   * The circle is created by dragging from one corner to the opposite corner
    */
   calculateCircleFromDrag(startX: number, startY: number, endX: number, endY: number) {
-    const centerX = (startX + endX) / 2;
-    const centerY = (startY + endY) / 2;
-    const radius = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)) / 2;
+    // Calculate the bounding box (like rectangles)
+    const x = Math.min(startX, endX);
+    const y = Math.min(startY, endY);
+    const width = Math.abs(endX - startX);
+    const height = Math.abs(endY - startY);
     
-    return { x: centerX, y: centerY, radius };
+    // For circles, use the smaller dimension to ensure it fits
+    const size = Math.min(width, height);
+    
+    return { x, y, width: size, height: size };
   }
 
   /**
@@ -446,33 +451,37 @@ export class CanvasService {
 
   /**
    * Create a circle shape
-   * @param x - Center X coordinate
-   * @param y - Center Y coordinate
-   * @param radius - Circle radius
+   * @param x - Top-left X coordinate (will be converted to center)
+   * @param y - Top-left Y coordinate (will be converted to center)
+   * @param width - Circle width (diameter)
+   * @param height - Circle height (diameter)
    * @param color - Circle color
    * @param createdBy - User ID who created the circle
    */
-  async createCircle(x: number, y: number, radius: number, color: string, createdBy: string): Promise<Shape> {
+  async createCircle(x: number, y: number, width: number, height: number, color: string, createdBy: string): Promise<Shape> {
     
-    // Validate minimum radius (5px)
-    if (radius < 5) {
-      throw new Error('Minimum circle radius is 5 pixels');
+    // Validate minimum size (10px diameter)
+    if (width < 10 || height < 10) {
+      throw new Error('Minimum circle size is 10×10 pixels');
     }
 
-    // Validate circle bounds
-    const boundsCheck = this.validateCircleBounds(x, y, radius);
-    
-    if (!boundsCheck) {
+    // Convert from top-left to center coordinates for storage
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    const radius = Math.min(width, height) / 2;
+
+    // Validate circle bounds using center coordinates
+    if (!this.validateCircleBounds(centerX, centerY, radius)) {
       throw new Error('Circle would be outside canvas bounds');
     }
 
     const shapeData: CreateShapeData = {
       type: 'circle',
-      x,
-      y,
-      width: radius * 2, // Store diameter as width for bounding box
-      height: radius * 2, // Store diameter as height for bounding box
-      radius,
+      x: centerX, // Store center coordinates
+      y: centerY, // Store center coordinates
+      width,
+      height,
+      radius: radius, // Store radius for compatibility
       color,
       createdBy,
     };
@@ -624,15 +633,11 @@ export class CanvasService {
     // Normalize rotation to 0-360 range
     const normalizedRotation = ((rotation % 360) + 360) % 360;
     
-    logger.canvas(`Rotating shape ${shapeId}: ${rotation}° → ${normalizedRotation}°`);
-    
     const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
     await updateDoc(shapeRef, {
       rotation: normalizedRotation,
       updatedAt: serverTimestamp()
     });
-    
-    logger.database(`Rotation saved to database for shape ${shapeId}`);
   }
 
   /**

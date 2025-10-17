@@ -33,6 +33,9 @@ export function Canvas() {
   // Resize handle hover state
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
   
+  // Track shapes that should have selectors hidden (for immediate deselection)
+  const [hiddenSelectors, setHiddenSelectors] = useState<Set<string>>(new Set());
+  
   // Rotation state management - consolidated into single object
   const [rotationState, setRotationState] = useState<{
     isRotating: boolean;
@@ -100,6 +103,7 @@ export function Canvas() {
     shapes, 
     selectedColor, 
     selectedShapeId,
+    setSelectedShapeId,
     drawingState, 
     startDrawing, 
     updateDrawing, 
@@ -167,6 +171,30 @@ export function Canvas() {
       shapeNodesRef.current.clear();
     };
   }, []);
+
+  // Clear hidden selectors when a shape is selected
+  useEffect(() => {
+    if (selectedShapeId) {
+      setHiddenSelectors(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(selectedShapeId);
+        return newSet;
+      });
+    }
+  }, [selectedShapeId]);
+
+  // Clear hidden selectors when shapes are unlocked in Firestore
+  useEffect(() => {
+    shapes.forEach(shape => {
+      if (hiddenSelectors.has(shape.id) && getShapeLockStatus(shape) === 'unlocked') {
+        setHiddenSelectors(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(shape.id);
+          return newSet;
+        });
+      }
+    });
+  }, [shapes, hiddenSelectors, getShapeLockStatus]);
 
   // Register canvas reset function globally for debugging
   useEffect(() => {
@@ -476,16 +504,54 @@ export function Canvas() {
     stage.batchDraw();
   }, []);
 
-  // Shape click handlers
+  // Shape click handlers - simplified for better reliability
   const handleShapeClick = useCallback(async (e: KonvaEventObject<MouseEvent>, shape: Shape) => {
     e.cancelBubble = true; // Prevent event from bubbling to stage
     
-    try {
-      await lockShape(shape.id);
-    } catch (error) {
-      console.error('Failed to lock shape:', error);
+    // If clicking on the same shape, toggle selection
+    if (selectedShapeId === shape.id) {
+      // Deselect current shape
+      setHiddenSelectors(prev => new Set(prev).add(shape.id));
+      setSelectedShapeId(null);
+      forceUpdate();
+      
+      // Unlock in background
+      unlockShape(shape.id).catch(error => {
+        console.error('Failed to unlock shape:', error);
+      });
+      return;
     }
-  }, [lockShape]);
+    
+    // If clicking on a different shape, switch selection
+    if (selectedShapeId && selectedShapeId !== shape.id) {
+      // Hide selector for previously selected shape
+      setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+      
+      // Unlock previous shape in background
+      unlockShape(selectedShapeId).catch(error => {
+        console.error('Failed to unlock previously selected shape:', error);
+      });
+    }
+    
+    // Select the new shape immediately
+    setSelectedShapeId(shape.id);
+    
+    // Clear any hidden selectors for this shape
+    setHiddenSelectors(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(shape.id);
+      return newSet;
+    });
+    
+    // Force re-render to show selector immediately
+    forceUpdate();
+    
+    // Lock the shape in background (don't wait for it)
+    lockShape(shape.id).catch(error => {
+      console.error('Failed to lock shape:', error);
+      // Keep shape selected even if lock fails - user can manually deselect
+    });
+  }, [lockShape, selectedShapeId, unlockShape, setSelectedShapeId, forceUpdate]);
   
   // Handle shape drag movement with boundary constraints
   const handleShapeDragMove = useCallback((e: KonvaEventObject<DragEvent>, shape: Shape) => {
@@ -494,8 +560,10 @@ export function Canvas() {
     const centerY = node.y();
     
     if (shape.type === 'circle') {
-      // For circles, use circle-specific clamping
+      // For circles, use center coordinates directly
       const radius = shape.radius || shape.width / 2;
+      
+      // Clamp position to canvas boundaries in real-time using center coordinates
       const clampedPosition = canvasService.clampCircleToCanvas(centerX, centerY, radius);
       
       // Only update position if it was clamped
@@ -504,7 +572,7 @@ export function Canvas() {
         node.y(clampedPosition.y);
       }
     } else {
-      // For rectangles and triangles, convert center coordinates to top-left coordinates
+      // For rectangles, convert center coordinates to top-left coordinates
       const topLeftX = centerX - shape.width / 2;
       const topLeftY = centerY - shape.height / 2;
       
@@ -539,8 +607,10 @@ export function Canvas() {
     let finalPosition;
     
     if (shape.type === 'circle') {
-      // For circles, validate using circle bounds
+      // For circles, use center coordinates directly
       const radius = shape.radius || shape.width / 2;
+      
+      // Validate and clamp final position using center coordinates
       const clampedPosition = canvasService.clampCircleToCanvas(centerX, centerY, radius);
       
       // Apply clamped position if needed
@@ -550,13 +620,12 @@ export function Canvas() {
         console.log('🔒 Circle position clamped to canvas bounds');
       }
       
-      // Store center coordinates for circles
       finalPosition = {
         x: clampedPosition.x,
         y: clampedPosition.y,
       };
     } else {
-      // For rectangles and triangles, convert center coordinates to top-left coordinates
+      // For rectangles, convert center coordinates to top-left coordinates
       const topLeftX = centerX - shape.width / 2;
       const topLeftY = centerY - shape.height / 2;
       
@@ -648,7 +717,7 @@ export function Canvas() {
       shapeHeight = radius * 2;
       aspectRatio = 1; // Circles are always square
     } else {
-      // For rectangles and triangles, use bounding box
+      // For rectangles, use top-left coordinates
       const centerX = shapeNode ? shapeNode.x() : (shape.x + shape.width / 2);
       const centerY = shapeNode ? shapeNode.y() : (shape.y + shape.height / 2);
       
@@ -797,6 +866,7 @@ export function Canvas() {
       
       if (resizingShape.type === 'circle') {
         // For circles, edge handles should maintain aspect ratio (circles are always round)
+        // The center should remain fixed during resize
         
         switch (direction) {
           case 't': // Top edge: calculate distance from center
@@ -807,6 +877,7 @@ export function Canvas() {
               const newRadius = Math.max(5, distance);
               newWidth = newRadius * 2;
               newHeight = newRadius * 2;
+              // Keep the center fixed - calculate new top-left position
               newX = centerX - newRadius;
               newY = centerY - newRadius;
             }
@@ -819,6 +890,7 @@ export function Canvas() {
               const newRadius = Math.max(5, distance);
               newWidth = newRadius * 2;
               newHeight = newRadius * 2;
+              // Keep the center fixed - calculate new top-left position
               newX = centerX - newRadius;
               newY = centerY - newRadius;
             }
@@ -831,6 +903,7 @@ export function Canvas() {
               const newRadius = Math.max(5, distance);
               newWidth = newRadius * 2;
               newHeight = newRadius * 2;
+              // Keep the center fixed - calculate new top-left position
               newX = centerX - newRadius;
               newY = centerY - newRadius;
             }
@@ -843,6 +916,7 @@ export function Canvas() {
               const newRadius = Math.max(5, distance);
               newWidth = newRadius * 2;
               newHeight = newRadius * 2;
+              // Keep the center fixed - calculate new top-left position
               newX = centerX - newRadius;
               newY = centerY - newRadius;
             }
@@ -934,15 +1008,10 @@ export function Canvas() {
         const newRadius = previewDimensions.width / 2;
         await canvasService.resizeCircle(activeHandle.shapeId, newRadius);
         
-        // Update position if it changed
-        if (resizeStart && (previewDimensions.x !== resizeStart.shapeX || previewDimensions.y !== resizeStart.shapeY)) {
-          await updateShape(activeHandle.shapeId, {
-            x: previewDimensions.x + newRadius, // Convert back to center coordinates
-            y: previewDimensions.y + newRadius
-          });
-        }
+        // For circles, the center should remain fixed during resize
+        // No position update needed since the center stays the same
       } else {
-        // For rectangles and triangles, use resizeShape method
+        // For rectangles, use resizeShape method
         await canvasService.resizeShape(
           activeHandle.shapeId,
           previewDimensions.width,
@@ -999,15 +1068,30 @@ export function Canvas() {
     
     // Get real-time shape position from node (Bug #2 fix)
     const shapeNode = shapeNodesRef.current.get(shape.id);
-    const shapeX = shapeNode ? shapeNode.x() : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2);
-    const shapeY = shapeNode ? shapeNode.y() : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2);
+    let centerX, centerY;
     
-    // Calculate shape center using real-time coordinates
-    const centerX = shapeX;
-    const centerY = shapeY;
+    if (shapeNode) {
+      // Use real-time position from the node
+      centerX = shapeNode.x();
+      centerY = shapeNode.y();
+    } else {
+      // Calculate center from stored coordinates
+      if (shape.type === 'circle') {
+        centerX = shape.x;
+        centerY = shape.y;
+      } else {
+        // For rectangles and triangles, center is at x + width/2, y + height/2
+        centerX = shape.x + shape.width / 2;
+        centerY = shape.y + shape.height / 2;
+      }
+    }
     
-    // Calculate initial angle from center to mouse
-    const initialAngle = Math.atan2(canvasPos.y - centerY, canvasPos.x - centerX);
+    // Calculate rotation handle position (middle of top edge)
+    const handleX = centerX; // Same X as center (middle of top edge)
+    const handleY = centerY - ROTATION_HANDLE_DISTANCE; // Above the shape center
+    
+    // Calculate initial angle from rotation handle to mouse
+    const initialAngle = Math.atan2(canvasPos.y - handleY, canvasPos.x - handleX);
     
     setRotationState({
       isRotating: true,
@@ -1044,15 +1128,30 @@ export function Canvas() {
     
     // Get real-time shape position from node (Bug #2 fix)
     const shapeNode = shapeNodesRef.current.get(shape.id);
-    const shapeX = shapeNode ? shapeNode.x() : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2);
-    const shapeY = shapeNode ? shapeNode.y() : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2);
+    let centerX, centerY;
     
-    // Calculate shape center using real-time coordinates
-    const centerX = shapeX;
-    const centerY = shapeY;
+    if (shapeNode) {
+      // Use real-time position from the node
+      centerX = shapeNode.x();
+      centerY = shapeNode.y();
+    } else {
+      // Calculate center from stored coordinates
+      if (shape.type === 'circle') {
+        centerX = shape.x;
+        centerY = shape.y;
+      } else {
+        // For rectangles and triangles, center is at x + width/2, y + height/2
+        centerX = shape.x + shape.width / 2;
+        centerY = shape.y + shape.height / 2;
+      }
+    }
     
-    // Calculate current angle from center to mouse
-    const currentAngle = Math.atan2(canvasPos.y - centerY, canvasPos.x - centerX);
+    // Calculate rotation handle position (middle of top edge)
+    const handleX = centerX; // Same X as center (middle of top edge)
+    const handleY = centerY - ROTATION_HANDLE_DISTANCE; // Above the shape center
+    
+    // Calculate current angle from rotation handle to mouse
+    const currentAngle = Math.atan2(canvasPos.y - handleY, canvasPos.x - handleX);
     
     // Calculate angle delta and convert to degrees
     const angleDelta = currentAngle - (rotationState.start?.initialAngle || 0);
@@ -1105,15 +1204,28 @@ export function Canvas() {
 
   // Background click handler (deselect + drawing)
   const handleStageClick = useCallback((e: KonvaEventObject<MouseEvent>) => {
-    // Check if we clicked on the stage background
+    // Simplified background detection - if we clicked on the stage itself or canvas background
     const targetClass = e.target.getClassName();
+    const targetId = e.target.id();
+    
+    // Check if we clicked on the stage background or canvas background
     const isBackground = targetClass === 'Stage' || 
-                        (targetClass === 'Rect' && e.target.id() === 'canvas-background') ||
-                        targetClass === 'Line';
+                        (targetClass === 'Rect' && targetId === 'canvas-background');
     
     if (isBackground) {
-      // Deselect current shape if any
+      // Deselect current shape if any - clear selection immediately for better UX
       if (selectedShapeId) {
+        console.log('Background click - deselecting shape');
+        // Hide selector immediately by adding to hidden set
+        setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+        
+        // Clear selection immediately to hide selector
+        setSelectedShapeId(null);
+        
+        // Force a re-render to ensure selector disappears immediately
+        forceUpdate();
+        
+        // Unlock shape in background (don't wait for it)
         unlockShape(selectedShapeId).catch(error => {
           console.error('Failed to unlock shape on deselect:', error);
         });
@@ -1142,7 +1254,7 @@ export function Canvas() {
         startDrawing(canvasPos.x, canvasPos.y);
       }
     }
-  }, [mode, selectedShapeId, startDrawing, unlockShape]);
+  }, [mode, selectedShapeId, startDrawing, unlockShape, setSelectedShapeId, forceUpdate]);
 
   const handleMouseMove = useCallback((e: KonvaEventObject<MouseEvent>) => {
     // Handle rotation if active
@@ -1190,8 +1302,25 @@ export function Canvas() {
     
     // Handle drawing
     if (!drawingState.isDrawing) return;
+    
+    // Capture the final mouse position for accurate shape creation
+    const stage = stageRef.current;
+    if (stage) {
+      const pos = stage.getPointerPosition();
+      if (pos) {
+        // Convert screen coordinates to canvas coordinates
+        const canvasPos = {
+          x: (pos.x - stage.x()) / stage.scaleX(),
+          y: (pos.y - stage.y()) / stage.scaleY(),
+        };
+        
+        // Update the drawing state with the final position before finishing
+        updateDrawing(canvasPos.x, canvasPos.y);
+      }
+    }
+    
     finishDrawing();
-  }, [rotationState.isRotating, handleRotationEnd, isResizing, handleResizeEnd, drawingState.isDrawing, finishDrawing]);
+  }, [rotationState.isRotating, handleRotationEnd, isResizing, handleResizeEnd, drawingState.isDrawing, updateDrawing, finishDrawing]);
 
   // Cancel drawing on Escape key
   useEffect(() => {
@@ -1240,6 +1369,27 @@ export function Canvas() {
     }
   }, [shapes, previewDimensions, isResizing]);
 
+  // Handle clicks on the canvas container for deselection
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    // Only deselect if we have a selected shape and we're clicking on the container itself
+    if (selectedShapeId && e.target === e.currentTarget) {
+      console.log('Container click - deselecting shape');
+      // Hide selector immediately by adding to hidden set
+      setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+      
+      // Clear selection immediately to hide selector
+      setSelectedShapeId(null);
+      
+      // Force a re-render to ensure selector disappears immediately
+      forceUpdate();
+      
+      // Unlock shape in background (don't wait for it)
+      unlockShape(selectedShapeId).catch(error => {
+        console.error('Failed to unlock shape on deselect:', error);
+      });
+    }
+  }, [selectedShapeId, setSelectedShapeId, unlockShape, forceUpdate]);
+
   return (
     <div className="canvas-container">
       <div 
@@ -1252,17 +1402,30 @@ export function Canvas() {
           msUserSelect: 'none',
           userSelect: 'none',
         }}
+        onClick={handleContainerClick}
       >
         <Stage
           ref={stageRef}
           width={stageSize.width}
           height={stageSize.height}
-          draggable={!isGesturing && !drawingState.isDrawing && mode === 'pan'}
+          draggable={!isGesturing && !drawingState.isDrawing && mode === 'select'}
           onWheel={handleWheel}
           onDragEnd={handleDragEnd}
           onMouseDown={handleStageClick}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onClick={(e) => {
+            // Fallback deselection - if we clicked on the stage itself, deselect
+            if (e.target === e.target.getStage() && selectedShapeId) {
+              console.log('Stage click - deselecting shape');
+              setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+              setSelectedShapeId(null);
+              forceUpdate();
+              unlockShape(selectedShapeId).catch(error => {
+                console.error('Failed to unlock shape on deselect:', error);
+              });
+            }
+          }}
         >
           <Layer>
             {/* Canvas background - visual indicator of canvas bounds */}
@@ -1297,17 +1460,20 @@ export function Canvas() {
             {shapes.map((shape) => {
               const lockStatus = getShapeLockStatus(shape);
               
-              // Visual styling based on lock status
+              // Use the actual lock status - the selection logic is handled elsewhere
+              const effectiveLockStatus = lockStatus;
+              
+              // Visual styling based on effective lock status
               let strokeColor = shape.color;
               let strokeWidth = 2;
               let opacity = 1;
               let isDraggable = false;
               
-              if (lockStatus === 'locked-by-me') {
+              if (effectiveLockStatus === 'locked-by-me') {
                 strokeColor = '#10b981'; // Green border
                 strokeWidth = 3;
                 isDraggable = true;
-              } else if (lockStatus === 'locked-by-other') {
+              } else if (effectiveLockStatus === 'locked-by-other') {
                 strokeColor = '#ef4444'; // Red border
                 strokeWidth = 3;
                 opacity = 0.5;
@@ -1369,22 +1535,16 @@ export function Canvas() {
                         shapeNodesRef.current.delete(shape.id);
                       }
                     }}
-                    x={shape.type === 'circle' 
-                      ? (hasOptimisticUpdate ? displayX + displayWidth / 2 : shape.x)
-                      : (hasOptimisticUpdate ? displayX + displayWidth / 2 : shape.x + shape.width / 2)
-                    }
-                    y={shape.type === 'circle' 
-                      ? (hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y)
-                      : (hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y + shape.height / 2)
-                    }
-                    offsetX={-displayWidth / 2}
-                    offsetY={-displayHeight / 2}
+                    x={hasOptimisticUpdate ? displayX + displayWidth / 2 : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2)}
+                    y={hasOptimisticUpdate ? displayY + displayHeight / 2 : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2)}
+                    offsetX={0}
+                    offsetY={0}
                     rotation={currentRotation}
                     draggable={isDraggable && !hasOptimisticUpdate}
                     onClick={(e) => handleShapeClick(e, shape)}
                     onDragMove={(e) => handleShapeDragMove(e, shape)}
                     onDragEnd={(e) => handleShapeDragEnd(e, shape)}
-                    listening={lockStatus !== 'locked-by-other' && !hasOptimisticUpdate}
+                    listening={effectiveLockStatus !== 'locked-by-other' && !hasOptimisticUpdate}
                   >
                     {/* Render shape based on type */}
                     {shape.type === 'rectangle' && (
@@ -1405,7 +1565,7 @@ export function Canvas() {
                       <Circle
                         x={0}
                         y={0}
-                        radius={displayWidth / 2}
+                        radius={Math.min(displayWidth, displayHeight) / 2}
                         fill={shape.color}
                         stroke={strokeColor}
                         strokeWidth={strokeWidth}
@@ -1416,6 +1576,7 @@ export function Canvas() {
                     
                     {shape.type === 'triangle' && (() => {
                       const vertices = calculateTriangleVertices(displayWidth, displayHeight);
+                      // For triangles, position vertices relative to center (like rectangles)
                       const points = vertices.flatMap(v => [v.x, v.y]);
                       return (
                         <Line
@@ -1431,7 +1592,7 @@ export function Canvas() {
                     })()}
                     
                     {/* Resize handles - inside the rotated group so they rotate with the shape */}
-                    {lockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && (() => {
+                    {effectiveLockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
@@ -1442,13 +1603,13 @@ export function Canvas() {
                       
                       // Define resize handles using local coordinates (relative to shape center)
                       const handles = shape.type === 'circle' ? [
-                        // For circles, show only 4 handles at cardinal directions
+                        // For circles, show only 4 handles at cardinal directions on the circumference
                         { x: -offset, y: -displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
                         { x: -displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
                         { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
                         { x: -offset, y: displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
                       ] : [
-                        // For rectangles and triangles, show all 8 handles
+                        // For rectangles and triangles, show all 8 handles (positioned relative to center)
                         { x: -displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
                         { x: -offset, y: -displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
                         { x: displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-tr` },
@@ -1483,36 +1644,29 @@ export function Canvas() {
                     })()}
                     
                     {/* Rotation handle - inside the rotated group so it rotates with the shape */}
-                    {lockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && (() => {
+                    {effectiveLockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
                       
-                      // Position rotation handle above shape center using local coordinates
-                      // Since the shape rectangle is at y={-displayHeight / 2}, we need to go further up
-                      const handleY = -ROTATION_HANDLE_DISTANCE - (displayHeight / 2); // Above the shape top edge
+                      // Position rotation handle above shape top edge using local coordinates
+                      const handleY = -displayHeight / 2 - ROTATION_HANDLE_DISTANCE; // Above the shape top edge
                       const handleSize = 16 / stageScale; // 16px diameter, scaled with zoom
                       const handleRadius = handleSize / 2;
+                      
+                      // Calculate the middle of the top edge for the rotation handle
+                      const handleX = 0; // Middle of the top edge (center of shape)
                       
                       const isHovered = rotationState.hoveredHandle === shape.id;
                       const handleColor = isHovered ? '#3b82f6' : '#ff0000'; // Bright red for maximum visibility
                       const iconColor = isHovered ? 'white' : 'white'; // White icon for better contrast
                       
-                      // Debug: Log exact coordinates
-                      console.log('📍 Rotation handle coordinates (local):', {
-                        handleY,
-                        distance: ROTATION_HANDLE_DISTANCE,
-                        shapeHeight: displayHeight,
-                        totalDistanceFromCenter: ROTATION_HANDLE_DISTANCE + (displayHeight / 2),
-                        handleSize,
-                        stageScale
-                      });
                       
                       return (
                         <React.Fragment key={`rotation-${shape.id}`}>
                           {/* Connecting line from handle to shape top edge */}
                           <Line
-                            points={[0, handleY, 0, -displayHeight / 2]}
+                            points={[handleX, handleY, handleX, -displayHeight / 2]}
                             stroke="#ff0000"
                             strokeWidth={3 / stageScale}
                             dash={[5 / stageScale, 5 / stageScale]}
@@ -1521,7 +1675,7 @@ export function Canvas() {
                           
                           {/* Rotation handle circle */}
                           <Group
-                            x={0}
+                            x={handleX}
                             y={handleY}
                             onMouseEnter={() => setRotationState(prev => ({ ...prev, hoveredHandle: shape.id }))}
                             onMouseLeave={() => setRotationState(prev => ({ ...prev, hoveredHandle: null }))}
@@ -1555,9 +1709,9 @@ export function Canvas() {
                   </Group>
                   
                   {/* Lock icon for shapes locked by others */}
-                  {lockStatus === 'locked-by-other' && (
+                  {effectiveLockStatus === 'locked-by-other' && (
                     <Text
-                      x={shape.type === 'circle' ? shape.x + (shape.radius || shape.width / 2) - 20 : shape.x + shape.width - 20}
+                      x={shape.type === 'circle' ? shape.x - 20 : shape.x + shape.width - 20}
                       y={shape.type === 'circle' ? shape.y - (shape.radius || shape.width / 2) + 5 : shape.y + 5}
                       text="🔒"
                       fontSize={16}
@@ -1573,10 +1727,11 @@ export function Canvas() {
               const { x, y, width, height } = drawingState.previewShape;
               
               if (activeTool === 'circle') {
-                // For circles, calculate center and radius from the preview bounding box
-                const centerX = x + width / 2;
-                const centerY = y + height / 2;
-                const radius = Math.min(width, height) / 2;
+                // For circles, render circle centered within the bounding box
+                const size = Math.min(width, height);
+                const centerX = x + size / 2;
+                const centerY = y + size / 2;
+                const radius = size / 2;
                 
                 return (
                   <Circle
@@ -1697,7 +1852,7 @@ export function Canvas() {
                         { x: previewDimensions.width / 2 - offset, y: -offset },
                         { x: -offset, y: previewDimensions.height / 2 - offset },
                       ] : [
-                        // For rectangles and triangles, show all 8 handles
+                        // For rectangles and triangles, show all 8 handles (positioned relative to center)
                         { x: -previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
                         { x: -offset, y: -previewDimensions.height / 2 - offset },
                         { x: previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
@@ -1776,6 +1931,7 @@ export function Canvas() {
               const handleY = realTimeY - ROTATION_HANDLE_DISTANCE;
               
               // Position tooltip with consistent scaling (Bug #3 fix)
+              // Tooltip should be positioned at the rotation handle location (middle of top edge)
               const tooltipX = centerX;
               const tooltipY = handleY - (15 / stageScale);
               

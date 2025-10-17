@@ -12,8 +12,8 @@ export function ColorToolbar() {
   ];
 
   const shapeTools = [
-    { name: 'Rectangle', value: 'rectangle', icon: '⬜' },
-    { name: 'Circle', value: 'circle', icon: '⭕' },
+    { name: 'Rectangle', value: 'rectangle', icon: '🟥' },
+    { name: 'Circle', value: 'circle', icon: '🔴' },
     { name: 'Triangle', value: 'triangle', icon: '🔺' },
   ];
 
@@ -26,11 +26,11 @@ export function ColorToolbar() {
         <div className="mode-buttons">
           <button
             type="button"
-            className={`mode-button ${mode === 'pan' ? 'active' : ''}`}
-            onClick={() => setMode('pan')}
-            title="Pan mode - drag to move around the canvas"
+            className={`mode-button ${mode === 'select' ? 'active' : ''}`}
+            onClick={() => setMode('select')}
+            title="Select mode - click to select shapes, drag to move canvas"
           >
-            🤚 Pan
+            👆
           </button>
           <button
             type="button"
@@ -38,7 +38,7 @@ export function ColorToolbar() {
             onClick={() => setMode('create')}
             title="Create mode - click and drag to create shapes"
           >
-            ✏️ Create
+            ✏️
           </button>
         </div>
 
@@ -59,7 +59,6 @@ export function ColorToolbar() {
                   <span className="tool-icon" aria-hidden="true">
                     {tool.icon}
                   </span>
-                  <span className="tool-name">{tool.name}</span>
                 </button>
               ))}
             </div>
