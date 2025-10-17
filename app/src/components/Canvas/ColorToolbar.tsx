@@ -2,13 +2,19 @@ import { useCanvas } from '../../hooks/useCanvas';
 import { SHAPE_COLORS } from '../../utils/constants';
 
 export function ColorToolbar() {
-  const { mode, setMode, selectedColor, setSelectedColor } = useCanvas();
+  const { mode, setMode, activeTool, setActiveTool, selectedColor, setSelectedColor } = useCanvas();
 
   const colors = [
     { name: 'Red', value: SHAPE_COLORS.RED },
     { name: 'Blue', value: SHAPE_COLORS.BLUE },
     { name: 'Green', value: SHAPE_COLORS.GREEN },
     { name: 'Yellow', value: SHAPE_COLORS.YELLOW },
+  ];
+
+  const shapeTools = [
+    { name: 'Rectangle', value: 'rectangle', icon: '⬜' },
+    { name: 'Circle', value: 'circle', icon: '⭕' },
+    { name: 'Triangle', value: 'triangle', icon: '🔺' },
   ];
 
 
@@ -30,11 +36,35 @@ export function ColorToolbar() {
             type="button"
             className={`mode-button ${mode === 'create' ? 'active' : ''}`}
             onClick={() => setMode('create')}
-            title="Create mode - click and drag to create rectangles"
+            title="Create mode - click and drag to create shapes"
           >
             ✏️ Create
           </button>
         </div>
+
+        {/* Shape Tools - Only show when in create mode */}
+        {mode === 'create' && (
+          <>
+            <h3 className="toolbar-title">Shapes</h3>
+            <div className="shape-tool-buttons">
+              {shapeTools.map((tool) => (
+                <button
+                  key={tool.value}
+                  type="button"
+                  className={`shape-tool-button ${activeTool === tool.value ? 'active' : ''}`}
+                  onClick={() => setActiveTool(tool.value as any)}
+                  title={`Create ${tool.name}`}
+                  aria-label={`Select ${tool.name} tool`}
+                >
+                  <span className="tool-icon" aria-hidden="true">
+                    {tool.icon}
+                  </span>
+                  <span className="tool-name">{tool.name}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Color Selection */}
         <h3 className="toolbar-title">Colors</h3>
