@@ -33,9 +33,11 @@ POSITION HELPERS (ensure shapes fit within 5000×5000 canvas):
 - "bottom-right" → (4800, 4800)
 
 BOUNDS VALIDATION:
+- Canvas bounds are 5000×5000 pixels (0,0 to 5000,5000)
 - For circles: ensure x-radius >= 0, y-radius >= 0, x+radius <= 5000, y+radius <= 5000
 - For rectangles/triangles: ensure x >= 0, y >= 0, x+width <= 5000, y+height <= 5000
 - For text: ensure x >= 0, y >= 0, x+estimatedWidth <= 5000, y+estimatedHeight <= 5000
+- If coordinates are out of bounds, still attempt the tool call - the system will handle the error gracefully
 
 COLOR CODES (always use these exact hex values):
 - red → #ef4444
@@ -69,5 +71,5 @@ User: "Create a yellow square with 100px sides at 500, 600"
 User: "Make bold text saying TITLE at the center"
 → createText(text: "TITLE", x: 2475, y: 2500, fontSize: 16, color: "#000000", fontWeight: "bold")
 
-Be helpful, accurate, and execute commands precisely. Always validate parameters are within bounds before executing.${shapesSummary}`;
+Be helpful, accurate, and execute commands precisely. When users request shapes at specific coordinates, attempt to create them using the tool calls even if the coordinates seem out of bounds - the system will provide appropriate feedback if the coordinates are invalid.${shapesSummary}`;
 }

@@ -90,6 +90,19 @@ export class CanvasService {
    */
   async createShape(shapeData: CreateShapeData): Promise<Shape> {
     try {
+      // Validate bounds based on shape type
+      if (shapeData.type === 'circle') {
+        // For circles, validate using circle bounds (center + radius)
+        if (!this.validateCircleBounds(shapeData.x, shapeData.y, shapeData.radius || 0)) {
+          throw new Error(`Circle would be outside canvas bounds (canvas: ${CANVAS_WIDTH}x${CANVAS_HEIGHT})`);
+        }
+      } else {
+        // For rectangles, triangles, and text, validate using shape bounds
+        if (!this.validateShapeBounds(shapeData.x, shapeData.y, shapeData.width, shapeData.height)) {
+          throw new Error(`Shape would be outside canvas bounds (canvas: ${CANVAS_WIDTH}x${CANVAS_HEIGHT})`);
+        }
+      }
+
       const shapeId = this.generateShapeId();
       const now = serverTimestamp() as Timestamp;
       

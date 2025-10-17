@@ -1,6 +1,7 @@
+import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CanvasProvider } from './contexts/CanvasContext';
-import { ToastProvider } from './contexts/ToastContext';
+import { ToastProvider, useToast } from './contexts/ToastContext';
 import AuthComponent from './components/Auth/AuthProvider';
 import AppShell from './components/Layout/AppShell';
 import Canvas from './components/Canvas/Canvas';
@@ -107,12 +108,29 @@ import './App.css'
   }
 };
 
+// Global toast context access for testing
+let globalToastContext: any = null;
+(window as any).setToastContext = function(context: any) {
+  globalToastContext = context;
+};
+(window as any).getToastContext = function() {
+  return globalToastContext;
+};
+
 // Simple AI test with current user
 (window as any).testAI = async function(command = "create a blue rectangle at 500, 500") {
   console.log('🤖 Testing AI with command:', command);
   
   try {
-    const ai = new AIService();
+    // Get toast context for error notifications
+    const { showError } = (window as any).getToastContext?.() || { showError: () => {} };
+    
+    const ai = new AIService({
+      onError: (message) => {
+        console.error('🚨 AI Boundary Error:', message);
+        showError(message);
+      }
+    });
     const userId = (window as any).getCurrentUserId();
     
     if (!userId) {
@@ -123,6 +141,14 @@ import './App.css'
     console.log('🧪 Executing command...');
     const result = await ai.executeCommand(command, userId);
     console.log('✅ Result:', result);
+    
+    // Debug: Check if tool calls were made
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      console.log('🔧 Tool calls made:', result.toolCalls);
+    } else {
+      console.log('⚠️ No tool calls made - AI may have rejected the command');
+    }
+    
     return result;
     
   } catch (error) {
@@ -148,7 +174,15 @@ import './App.css'
   console.log('🧪 Starting Comprehensive AI Command Tests...');
   console.log('=====================================');
   
-  const ai = new AIService();
+  // Get toast context for error notifications
+  const { showError } = (window as any).getToastContext?.() || { showError: () => {} };
+  
+  const ai = new AIService({
+    onError: (message) => {
+      console.error('🚨 AI Boundary Error:', message);
+      showError(message);
+    }
+  });
   const userId = (window as any).getCurrentUserId();
   
   if (!userId) {
@@ -158,9 +192,9 @@ import './App.css'
   
   const testCommands = [
     {
-      name: 'Basic Rectangle',
-      command: 'create a blue rectangle at 500, 500',
-      expected: 'Blue rectangle at (500, 500)'
+      name: 'Out of Bounds Rectangle',
+      command: 'create a blue rectangle at 6000, 6000',
+      expected: 'Should trigger boundary error toast'
     },
     {
       name: 'Centered Rectangle',
@@ -244,6 +278,33 @@ import './App.css'
   return result;
 };
 
+// Test boundary error toast notifications
+(window as any).testBoundaryError = async function() {
+  console.log('🧪 Testing boundary error toast notifications...');
+  
+  // Test commands that should trigger boundary errors
+  const boundaryTestCommands = [
+    'create a blue rectangle at 6000, 6000', // Way out of bounds
+    'add a red circle at 10000, 10000', // Way out of bounds
+    'make a green triangle at -100, -100' // Negative coordinates
+  ];
+  
+  for (const command of boundaryTestCommands) {
+    console.log(`\n🧪 Testing boundary error: "${command}"`);
+    try {
+      const result = await (window as any).testAI(command);
+      console.log('Result:', result);
+    } catch (error) {
+      console.log('Error:', error);
+    }
+    
+    // Wait a bit between commands to see the toasts
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  
+  console.log('\n✅ Boundary error tests completed. Check for toast notifications in the UI!');
+};
+
 // Debug bounds validation
 (window as any).debugBounds = function() {
   console.log('🔍 Debugging Canvas Bounds...');
@@ -286,7 +347,15 @@ import './App.css'
 (window as any).testAIPositions = async function() {
   console.log('🤖 Testing what AI actually generates...');
   
-  const ai = new AIService();
+  // Get toast context for error notifications
+  const { showError } = (window as any).getToastContext?.() || { showError: () => {} };
+  
+  const ai = new AIService({
+    onError: (message) => {
+      console.error('🚨 AI Boundary Error:', message);
+      showError(message);
+    }
+  });
   const userId = (window as any).getCurrentUserId();
   
   const testCommands = [
@@ -325,7 +394,12 @@ import './App.css'
 // Main app component with route guard logic
 function AppContent() {
   const { user, loading } = useAuth();
+  const toastContext = useToast();
   
+  // Set global toast context for testing functions
+  React.useEffect(() => {
+    (window as any).setToastContext(toastContext);
+  }, [toastContext]);
 
   // Show loading spinner while determining auth state
   if (loading) {

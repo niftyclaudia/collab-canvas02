@@ -8,16 +8,22 @@ interface CommandResult {
   toolCalls: any[];
 }
 
+interface AIServiceOptions {
+  onError?: (message: string) => void;
+}
+
 export class AIService {
   private openai: OpenAI;
   private canvasService: CanvasService;
+  private onError?: (message: string) => void;
   
-  constructor() {
+  constructor(options?: AIServiceOptions) {
     this.openai = new OpenAI({
       apiKey: import.meta.env.VITE_OPENAI_API_KEY,
       dangerouslyAllowBrowser: true
     });
     this.canvasService = new CanvasService();
+    this.onError = options?.onError;
   }
   
   async executeCommand(prompt: string, userId: string): Promise<CommandResult> {
@@ -76,6 +82,11 @@ export class AIService {
           result: result
         });
       } catch (error: any) {
+        // Check if it's a boundary error and show toast notification
+        if (error.message && error.message.includes('outside canvas bounds')) {
+          this.onError?.(`⚠️ Cannot create shape: ${error.message}`);
+        }
+        
         results.push({
           tool: call.function.name,
           success: false,
@@ -102,12 +113,7 @@ export class AIService {
           height: args.height,
           color: args.color,
           rotation: 0,
-          zIndex: 0,
-          groupId: null,
-          createdBy: userId,
-          createdAt: Date.now(),
-          lockedBy: null,
-          lockedAt: null
+          createdBy: userId
         });
         
       case 'createCircle':
@@ -192,7 +198,7 @@ export class AIService {
   private getToolDefinitions() {
     return [
       {
-        type: "function",
+        type: "function" as const,
         function: {
           name: "createRectangle",
           description: "Creates a rectangle on the canvas at specified position with given dimensions and color.",
@@ -210,7 +216,7 @@ export class AIService {
         }
       },
       {
-        type: "function",
+        type: "function" as const,
         function: {
           name: "createCircle",
           description: "Creates a circle on the canvas at specified center position with given radius and color.",
@@ -227,7 +233,7 @@ export class AIService {
         }
       },
       {
-        type: "function",
+        type: "function" as const,
         function: {
           name: "createTriangle",
           description: "Creates a triangle on the canvas at specified position with given dimensions and color.",
@@ -245,7 +251,7 @@ export class AIService {
         }
       },
       {
-        type: "function",
+        type: "function" as const,
         function: {
           name: "createText",
           description: "Creates a text layer at specified position with optional fontSize, color, and formatting.",
