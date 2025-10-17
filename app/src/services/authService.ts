@@ -52,7 +52,6 @@ class AuthService {
       const userDocRef = doc(firestore, 'users', firebaseUser.uid);
       await setDoc(userDocRef, userData);
 
-      console.log('✅ User signed up successfully:', firebaseUser.uid);
 
       return {
         uid: firebaseUser.uid,
@@ -75,7 +74,6 @@ class AuthService {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
 
-      console.log('✅ Firebase auth successful, fetching user doc for:', firebaseUser.uid);
 
       // Get user data from Firestore
       const userDocRef = doc(firestore, 'users', firebaseUser.uid);
@@ -95,7 +93,6 @@ class AuthService {
         const userDocRef = doc(firestore, 'users', firebaseUser.uid);
         await setDoc(userDocRef, userData);
         
-        console.log('✅ Created missing user document for:', firebaseUser.uid);
         
         return {
           uid: firebaseUser.uid,
@@ -105,8 +102,6 @@ class AuthService {
 
       const userData = userDoc.data() as Omit<User, 'uid'>;
       
-      console.log('✅ User logged in successfully:', firebaseUser.uid);
-      console.log('✅ User data from Firestore:', userData);
 
       return {
         uid: firebaseUser.uid,
@@ -125,7 +120,6 @@ class AuthService {
   async logout(): Promise<void> {
     try {
       await signOut(auth);
-      console.log('✅ User logged out successfully');
     } catch (error) {
       console.error('❌ Logout error:', error);
       throw error;

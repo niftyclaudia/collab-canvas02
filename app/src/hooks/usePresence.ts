@@ -21,10 +21,8 @@ export function usePresence() {
       return;
     }
     
-    // Clean up stale presence data before subscribing (30 second timeout for faster cleanup)
-    presenceService.cleanupStalePresence(0.5).catch((error) => {
-      console.error('Failed to cleanup stale presence data:', error);
-    });
+    // Note: cleanupStalePresence is disabled because it requires admin permissions
+    // The onDisconnect handlers will handle cleanup automatically
     
     const unsubscribe = presenceService.subscribeToPresence((updates: PresenceUpdate[]) => {
       // Filter and map presence updates to OnlineUser format
@@ -100,7 +98,7 @@ export function usePresence() {
 
     // Cleanup function - only runs for non-logout scenarios
     return () => {
-      if (user) {
+      if (user && !presenceService.getLogoutFlag()) {
         // This cleanup runs when:
         // 1. User navigates away from page (browser close/refresh)
         // 2. Component unmounts for other reasons
@@ -110,6 +108,7 @@ export function usePresence() {
         }).catch((error) => {
           console.error('usePresence cleanup failed:', error);
         });
+      } else if (presenceService.getLogoutFlag()) {
       }
     };
   }, [user]);

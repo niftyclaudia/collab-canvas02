@@ -319,7 +319,6 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         });
       }
 
-      console.log('✅ Shape created successfully');
     } catch (error) {
       console.error('❌ Failed to create shape:', error);
     }
