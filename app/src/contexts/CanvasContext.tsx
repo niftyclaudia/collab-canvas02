@@ -369,7 +369,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         const timeout = window.setTimeout(async () => {
           try {
             await canvasService.unlockShape(shapeId);
-            setSelectedShapeId(prev => prev === shapeId ? null : prev);
+            setSelectedShapeId(selectedShapeId === shapeId ? null : selectedShapeId);
             lockTimeoutRef.current.delete(shapeId);
           } catch (error) {
             console.error('Error auto-unlocking shape:', error);
@@ -401,7 +401,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const unlockShape = useCallback(async (shapeId: string): Promise<void> => {
     try {
       await canvasService.unlockShape(shapeId);
-      setSelectedShapeId(prev => prev === shapeId ? null : prev);
+      setSelectedShapeId(selectedShapeId === shapeId ? null : selectedShapeId);
       
       // Clear timeout
       const existingTimeout = lockTimeoutRef.current.get(shapeId);
