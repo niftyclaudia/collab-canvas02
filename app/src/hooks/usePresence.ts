@@ -99,7 +99,6 @@ export function usePresence() {
     // Cleanup function - only runs for non-logout scenarios
     return () => {
       if (user && !presenceService.getLogoutFlag()) {
-        console.log('🧹 usePresence cleanup triggered for user:', user.uid);
         // This cleanup runs when:
         // 1. User navigates away from page (browser close/refresh)
         // 2. Component unmounts for other reasons
@@ -110,7 +109,6 @@ export function usePresence() {
           console.error('usePresence cleanup failed:', error);
         });
       } else if (presenceService.getLogoutFlag()) {
-        console.log('🚫 Skipping usePresence cleanup - logout in progress');
       }
     };
   }, [user]);

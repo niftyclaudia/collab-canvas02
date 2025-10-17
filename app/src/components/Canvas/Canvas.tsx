@@ -941,7 +941,6 @@ export function Canvas() {
         }
       }
       
-      console.log('✅ Shape resized successfully');
     } catch (error) {
       console.error('❌ Failed to resize shape:', error);
       // Clear preview on error so shape reverts to original
@@ -1080,7 +1079,6 @@ export function Canvas() {
     try {
       // Save rotation to Firestore
       await canvasService.rotateShape(rotationState.start.shapeId, finalRotation);
-      console.log('✅ Shape rotated successfully');
     } catch (error) {
       console.error('❌ Failed to rotate shape:', error);
       // Show user-facing error message
@@ -1221,7 +1219,6 @@ export function Canvas() {
     }
     
     if (dimensionsMatch) {
-      console.log('✅ Firestore update confirmed, clearing preview dimensions');
       setPreviewDimensions(null);
     }
   }, [shapes, previewDimensions, isResizing]);
@@ -1468,14 +1465,6 @@ export function Canvas() {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
-                      // Debug: Log when rotation handle should be shown
-                      console.log('🔄 Rendering rotation handle for shape:', shape.id, {
-                        lockStatus,
-                        isBeingResized,
-                        hasOptimisticUpdate,
-                        shapeCenter: { x: displayX + displayWidth / 2, y: displayY + displayHeight / 2 },
-                        hasShapeNode: !!shapeNodesRef.current.get(shape.id)
-                      });
                       
                       // Position rotation handle above shape center using local coordinates
                       // Since the shape rectangle is at y={-displayHeight / 2}, we need to go further up

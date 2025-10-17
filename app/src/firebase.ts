@@ -26,17 +26,13 @@ export const database = getDatabase(app);
 console.log('🔥 Firebase Configuration Debug Info:');
 console.log('📊 Environment mode:', import.meta.env.MODE);
 console.log('🌐 Hostname:', window.location.hostname);
-console.log('🔗 Realtime Database URL:', import.meta.env.VITE_FIREBASE_DATABASE_URL);
-console.log('🏗️ Project ID:', import.meta.env.VITE_FIREBASE_PROJECT_ID);
 console.log('🔑 Auth Domain:', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
 console.log('📦 Firestore App Name:', app.name);
-console.log('🗄️ Firestore Database:', firestore.app.options.projectId);
 console.log('🔥 Firestore Type:', firestore.type);
 
 // Check if we should use emulators (respecting VITE_USE_EMULATORS env var)
 const useEmulators = import.meta.env.VITE_USE_EMULATORS === 'true';
 const isEmulator = useEmulators && (import.meta.env.MODE === 'development' || window.location.hostname === 'localhost');
-console.log('🎯 VITE_USE_EMULATORS env var:', import.meta.env.VITE_USE_EMULATORS);
 console.log('🎯 Using Firebase Emulators:', isEmulator);
 console.log('🎯 Firestore Collection Path: canvases/main/shapes');
 
@@ -44,7 +40,6 @@ console.log('🎯 Firestore Collection Path: canvases/main/shapes');
 if (!isEmulator) {
   console.log('✅ Production Firebase initialized successfully');
   console.log('✅ Realtime Database URL:', import.meta.env.VITE_FIREBASE_DATABASE_URL);
-  console.log('✅ Firestore Project:', firestore.app.options.projectId);
 }
 
 // Connect to emulators only if VITE_USE_EMULATORS=true

@@ -43,14 +43,10 @@ class PresenceService {
    */
   async setOffline(userId: string): Promise<void> {
     try {
-      console.log('📴 Setting user offline:', userId);
       
       // Check if user is still authenticated
       const { auth } = await import('../firebase');
       const currentUser = auth.currentUser;
-      console.log('🔐 Current auth user:', currentUser?.uid || 'null');
-      console.log('🔐 Target user ID:', userId);
-      console.log('🔐 Auth matches target:', currentUser?.uid === userId);
       
       const presenceRef = ref(database, `sessions/main/users/${userId}/presence`);
       const presenceData: PresenceData = {
@@ -61,7 +57,6 @@ class PresenceService {
       };
 
       await set(presenceRef, presenceData);
-      console.log('✅ Successfully set user offline:', userId);
     } catch (error) {
       console.error('Error setting user offline:', error);
       throw error;
@@ -171,7 +166,6 @@ class PresenceService {
    */
   setLogoutFlag(value: boolean): void {
     this.isLoggingOut = value;
-    console.log('🏁 PresenceService logout flag set to:', value);
   }
 
   /**

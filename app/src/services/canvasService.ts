@@ -105,7 +105,6 @@ export class CanvasService {
       const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
       await setDoc(shapeDocRef, shape);
 
-      console.log('✅ Shape created successfully:', shapeId);
 
       return {
         id: shapeId,
@@ -131,7 +130,6 @@ export class CanvasService {
 
       await updateDoc(shapeDocRef, updateData);
 
-      console.log('✅ Shape updated successfully:', shapeId);
     } catch (error) {
       console.error('❌ Error updating shape:', error);
       throw error;
@@ -155,7 +153,6 @@ export class CanvasService {
         } as Shape);
       });
 
-      console.log('✅ Fetched shapes successfully:', shapes.length);
       return shapes;
     } catch (error) {
       console.error('❌ Error fetching shapes:', error);
@@ -183,7 +180,6 @@ export class CanvasService {
             } as Shape);
           });
 
-          console.log('🔄 Shapes updated (real-time):', shapes.length);
           callback(shapes);
         },
         (error) => {
@@ -193,7 +189,6 @@ export class CanvasService {
         }
       );
 
-      console.log('👂 Subscribed to shapes updates');
       return unsubscribe;
     } catch (error) {
       console.error('❌ Error setting up shapes subscription:', error);
@@ -308,7 +303,6 @@ export class CanvasService {
         updatedAt: serverTimestamp() as Timestamp,
       });
 
-      console.log('✅ Shape locked successfully:', shapeId, 'by:', userId);
       return true;
     } catch (error) {
       console.error('❌ Error locking shape:', error);
@@ -329,7 +323,6 @@ export class CanvasService {
         updatedAt: serverTimestamp() as Timestamp,
       });
 
-      console.log('✅ Shape unlocked successfully:', shapeId);
     } catch (error) {
       console.error('❌ Error unlocking shape:', error);
       throw error;
@@ -374,35 +367,20 @@ export class CanvasService {
    */
   async clearCanvas(): Promise<void> {
     try {
-      console.log('🗑️ Starting clearCanvas operation...');
-      console.log('🗑️ Collection path:', this.shapesCollectionPath);
-      
-      const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
-      console.log('🗑️ Fetching shapes to delete...');
-      
+        const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
       const querySnapshot = await getDocs(shapesCollectionRef);
-      console.log('🗑️ Found shapes:', querySnapshot.docs.length);
       
       if (querySnapshot.empty) {
-        console.log('✅ Canvas is already empty');
         return;
       }
-
-      // Log shape IDs being deleted
-      const shapeIds = querySnapshot.docs.map(doc => doc.id);
-      console.log('🗑️ Shape IDs to delete:', shapeIds);
 
       // Use batch to delete all shapes efficiently
       const batch = writeBatch(firestore);
       querySnapshot.docs.forEach((doc) => {
-        console.log('🗑️ Adding to batch delete:', doc.id);
         batch.delete(doc.ref);
       });
 
-      console.log('🗑️ Committing batch delete...');
       await batch.commit();
-      console.log('✅ Canvas cleared successfully:', querySnapshot.docs.length, 'shapes deleted');
-      console.log('✅ Batch commit completed');
     } catch (error) {
       console.error('❌ Error clearing canvas:', error);
       console.error('❌ Error details:', {
@@ -461,7 +439,6 @@ export class CanvasService {
    * @param createdBy - User ID who created the circle
    */
   async createCircle(x: number, y: number, radius: number, color: string, createdBy: string): Promise<Shape> {
-    console.log(`🔍 createCircle called with: x=${x}, y=${y}, radius=${radius}, color=${color}`);
     
     // Validate minimum radius (5px)
     if (radius < 5) {
@@ -470,7 +447,6 @@ export class CanvasService {
 
     // Validate circle bounds
     const boundsCheck = this.validateCircleBounds(x, y, radius);
-    console.log(`🔍 Bounds check: x-radius=${x-radius}>=0, y-radius=${y-radius}>=0, x+radius=${x+radius}<=${CANVAS_WIDTH}, y+radius=${y+radius}<=${CANVAS_HEIGHT}, result=${boundsCheck}`);
     
     if (!boundsCheck) {
       throw new Error('Circle would be outside canvas bounds');
@@ -602,7 +578,6 @@ export class CanvasService {
       updatedAt: serverTimestamp()
     });
 
-    console.log('✅ Circle resized successfully:', shapeId, `radius: ${radius}`);
   }
 
   /**
@@ -624,7 +599,6 @@ export class CanvasService {
       updatedAt: serverTimestamp()
     });
 
-    console.log('✅ Shape resized successfully:', shapeId, `${width}×${height}`);
   }
 
   /**
@@ -642,7 +616,6 @@ export class CanvasService {
       updatedAt: serverTimestamp()
     });
     
-    console.log(`✅ Shape ${shapeId} rotated to ${normalizedRotation}°`);
   }
 }
 

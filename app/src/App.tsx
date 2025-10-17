@@ -10,7 +10,6 @@ import { AIService } from './services/aiService';
 import { auth } from './firebase';
 import './App.css'
 
-console.log('📱 App component loading...');
 
 // Make AI Service test function available globally for console testing
 (window as any).testAIService = async function() {
@@ -327,8 +326,6 @@ console.log('📱 App component loading...');
 function AppContent() {
   const { user, loading } = useAuth();
   
-  // Debug logging
-  console.log('🔍 App Debug:', { user: !!user, loading, userId: user?.uid });
 
   // Show loading spinner while determining auth state
   if (loading) {

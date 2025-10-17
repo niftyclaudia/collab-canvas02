@@ -22,18 +22,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    console.log('🔄 Setting up auth state listener');
     
     // Set up auth state listener
     const unsubscribe = authService.onAuthStateChanged((userData) => {
-      console.log('📡 Auth state changed:', userData?.username || 'logged out');
       setUser(userData);
       setLoading(false);
     });
 
     // Cleanup listener on unmount
     return () => {
-      console.log('🧹 Cleaning up auth state listener');
       unsubscribe();
     };
   }, []);
@@ -80,12 +77,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Step 1: Clean up presence data BEFORE auth signout to prevent race conditions
       // Use the original user object (not memoized) to ensure we have the current state
       if (user?.uid) {
-        console.log('🚪 AuthContext: Starting presence cleanup before logout for user:', user.uid);
         try {
           await presenceService.logoutCleanup(user.uid);
-          console.log('✅ AuthContext: Presence cleanup completed, proceeding with auth logout');
         } catch (presenceError) {
-          console.warn('⚠️ AuthContext: Presence cleanup failed, but continuing with logout:', presenceError);
           // Don't fail the entire logout process if presence cleanup fails
         }
       }
@@ -94,7 +88,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await authService.logout();
       // setUser(null) will be called by the auth state listener
     } catch (error) {
-      console.error('❌ AuthContext: Error during logout process:', error);
       setLoading(false);
       throw error;
     }
