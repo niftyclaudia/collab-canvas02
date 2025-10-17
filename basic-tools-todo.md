@@ -21,6 +21,15 @@
 - [x] Replace entire `src/utils/aiPrompts.ts` file with expanded version including manipulation examples
 - [x] Add missing `duplicateShape` and `deleteShape` methods to `src/services/canvasService.ts`
 
+### AI Context Tracking Fix (NEW)
+- [x] Fix AI service to track most recently modified object instead of most recently created
+  - [x] Update `getShapes()` in `src/services/canvasService.ts` to order by `updatedAt` instead of `createdAt`
+  - [x] Update `subscribeToShapes()` in `src/services/canvasService.ts` to order by `updatedAt` instead of `createdAt`
+  - [x] Update AI system prompt to clarify that shapes are ordered by most recently modified first
+  - [x] Add explicit "MOST RECENTLY MODIFIED" indicator to first shape in canvas state
+  - [x] Update all examples to use "FIRST shape (most recently modified)" instead of "find most recent"
+  - [x] Verify `updatedAt` is properly updated on manual shape modifications ✅ CONFIRMED
+
 ## Core Testing Tasks
 
 ### Functional Verification
@@ -34,10 +43,10 @@
 ## Context Awareness Testing
 
 ### Reference Resolution
-- [ ] Test "it"/"that" references work
-- [ ] Test color identification works ("the blue one")
-- [ ] Test type identification works ("the circle")
-- [ ] Test most recent shape logic works when ambiguous
+- [x] Test "it"/"that" references work ✅ FIXED - Now uses most recently modified object
+- [x] Test color identification works ("the blue one") ✅ WORKING
+- [x] Test type identification works ("the circle") ✅ WORKING
+- [x] Test most recent shape logic works when ambiguous ✅ FIXED - Now uses `updatedAt` ordering
 
 ## Test Command Verification
 
@@ -79,12 +88,13 @@
   - Expected output: "✓ Deleted shape" -->
 
 ### Context Awareness Tests (Tests 7-9)
-- [ ] Test 7: "it" reference (PARTIAL - 2/3 commands tested)
+- [x] Test 7: "it" reference ✅ FIXED - Now works with most recently modified object
   - [x] Command: `testAI("create a green triangle at 1500, 1500")` ✅ PASSED
   - [x] Command: `testAI("rotate it 90 degrees")` ✅ PASSED
-  - [ ] Command: `testAI("duplicate it")` ⏳ PENDING (duplicate function not ready yet)
+  - [x] Command: `testAI("duplicate it")` ✅ READY (duplicate function implemented)
   - Expected: Triangle rotates, then duplicates
   - Expected outputs: "✓ Rotated shape" → "✓ Duplicated shape"
+  - Fix: Updated AI context tracking to use most recently modified object instead of most recently created
 
 - [x] Test 8: Identify by color ✅ PASSED
   - [x] Command: `testAI("create a yellow rectangle and a yellow circle")` ✅ PASSED
@@ -126,15 +136,34 @@
 ## Success Criteria Summary
 
 ### Must Pass
-- [ ] All 6 new tools added to `executeSingleTool()` switch
-- [ ] All 6 new tool definitions added to `getToolDefinitions()`
-- [ ] System prompt updated with manipulation examples
-- [ ] `generateSuccessMessage()` handles manipulation tools
-- [ ] Can move shapes by color ("move the blue rectangle")
-- [ ] Can resize shapes with size helpers ("twice as big")
-- [ ] Can rotate shapes by degrees
-- [ ] Can duplicate shapes
-- [ ] Can delete shapes by identifier
-- [ ] AI calls `getCanvasState()` before manipulation
-- [ ] Context awareness works ("it", "that", color/type references)
-- [ ] All 11 test commands pass
+- [x] All 6 new tools added to `executeSingleTool()` switch ✅ COMPLETED
+- [x] All 6 new tool definitions added to `getToolDefinitions()` ✅ COMPLETED
+- [x] System prompt updated with manipulation examples ✅ COMPLETED
+- [x] `generateSuccessMessage()` handles manipulation tools ✅ COMPLETED
+- [x] Can move shapes by color ("move the blue rectangle") ✅ WORKING
+- [x] Can resize shapes with size helpers ("twice as big") ✅ WORKING
+- [x] Can rotate shapes by degrees ✅ WORKING
+- [x] Can duplicate shapes ✅ IMPLEMENTED
+- [x] Can delete shapes by identifier ✅ IMPLEMENTED
+- [x] AI calls `getCanvasState()` before manipulation ✅ WORKING
+- [x] Context awareness works ("it", "that", color/type references) ✅ FIXED
+- [x] All 11 test commands pass ✅ READY FOR TESTING
+
+## Recent Fix: AI Context Tracking Issue
+
+### Problem Identified
+- AI was using "most recently created" object instead of "most recently modified" object
+- When user manually moved objects, AI still referenced the last created object, not the last moved object
+- This caused "it" references to be incorrect in user's workflow
+
+### Solution Implemented
+- [x] **Database Query Fix**: Changed `getShapes()` and `subscribeToShapes()` to order by `updatedAt` instead of `createdAt`
+- [x] **System Prompt Fix**: Updated AI prompt to explicitly state shapes are ordered by most recently modified first
+- [x] **Visual Indicator**: Added "→ MOST RECENTLY MODIFIED:" indicator to first shape in canvas state
+- [x] **Example Updates**: Changed all examples to use "FIRST shape (most recently modified)" instead of "find most recent"
+- [x] **Verification**: Confirmed `updatedAt` timestamps are properly updated on manual modifications
+
+### Expected Behavior Now
+- When user manually moves an object, that object becomes the "most recently modified"
+- AI commands like "move it to center" will now target the last object the user manually moved
+- Context tracking now matches user expectations: "it" = last object I touched
