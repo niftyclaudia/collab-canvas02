@@ -9,6 +9,8 @@ import ToastContainer from './components/UI/ToastContainer';
 import ErrorBoundary from './components/UI/ErrorBoundary';
 import { AIService } from './services/aiService';
 import { auth } from './firebase';
+import { logger, LogCategory } from './utils/logger';
+import './utils/logging-controls'; // Initialize logging controls
 import './App.css'
 
 
@@ -99,11 +101,11 @@ import './App.css'
 (window as any).getCurrentUserId = function() {
   const user = auth.currentUser;
   if (user) {
-    console.log('👤 Current User ID:', user.uid);
-    console.log('👤 Current User Email:', user.email);
+    logger.auth(`Current User ID: ${user.uid}`);
+    logger.auth(`Current User Email: ${user.email}`);
     return user.uid;
   } else {
-    console.log('❌ No user logged in');
+    logger.warn(LogCategory.AUTH, 'No user logged in');
     return null;
   }
 };
@@ -119,7 +121,7 @@ let globalToastContext: any = null;
 
 // Simple AI test with current user
 (window as any).testAI = async function(command = "create a blue rectangle at 500, 500") {
-  console.log('🤖 Testing AI with command:', command);
+  logger.testing(`Testing AI with command: ${command}`);
   
   try {
     // Get toast context for error notifications
@@ -127,32 +129,32 @@ let globalToastContext: any = null;
     
     const ai = new AIService({
       onError: (message) => {
-        console.error('🚨 AI Boundary Error:', message);
+        logger.error(LogCategory.AI, `AI Boundary Error: ${message}`);
         showError(message);
       }
     });
     const userId = (window as any).getCurrentUserId();
     
     if (!userId) {
-      console.error('❌ No user logged in. Please sign in first or use Firebase emulators.');
+      logger.error(LogCategory.AUTH, 'No user logged in. Please sign in first or use Firebase emulators.');
       return;
     }
     
-    console.log('🧪 Executing command...');
+    logger.testing('Executing command...');
     const result = await ai.executeCommand(command, userId);
-    console.log('✅ Result:', result);
+    logger.testing(`Result: ${JSON.stringify(result)}`);
     
     // Debug: Check if tool calls were made
     if (result.toolCalls && result.toolCalls.length > 0) {
-      console.log('🔧 Tool calls made:', result.toolCalls);
+      logger.debug(LogCategory.AI, `Tool calls made: ${JSON.stringify(result.toolCalls)}`);
     } else {
-      console.log('⚠️ No tool calls made - AI may have rejected the command');
+      logger.warn(LogCategory.AI, 'No tool calls made - AI may have rejected the command');
     }
     
     return result;
     
   } catch (error) {
-    console.error('❌ AI test failed:', error);
+    logger.error(LogCategory.AI, `AI test failed: ${error}`);
     return error;
   }
 };

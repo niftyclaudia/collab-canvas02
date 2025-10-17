@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
+import { logger } from '../utils/logger';
 
 // Shape interface matching the data model from task.md
 export interface Shape {
@@ -623,12 +624,72 @@ export class CanvasService {
     // Normalize rotation to 0-360 range
     const normalizedRotation = ((rotation % 360) + 360) % 360;
     
+    logger.canvas(`Rotating shape ${shapeId}: ${rotation}° → ${normalizedRotation}°`);
+    
     const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
     await updateDoc(shapeRef, {
       rotation: normalizedRotation,
       updatedAt: serverTimestamp()
     });
     
+    logger.database(`Rotation saved to database for shape ${shapeId}`);
+  }
+
+  /**
+   * Duplicate a shape with a small offset
+   * @param shapeId - The ID of the shape to duplicate
+   * @param createdBy - User ID who is duplicating the shape
+   */
+  async duplicateShape(shapeId: string, createdBy: string): Promise<Shape> {
+    try {
+      // Get the original shape
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const originalShape = shapeDoc.data() as Shape;
+      
+      // Create duplicate with 20px offset
+      const duplicateData: CreateShapeData = {
+        type: originalShape.type,
+        x: originalShape.x + 20,
+        y: originalShape.y + 20,
+        width: originalShape.width,
+        height: originalShape.height,
+        radius: originalShape.radius,
+        color: originalShape.color,
+        rotation: originalShape.rotation || 0,
+        text: originalShape.text,
+        fontSize: originalShape.fontSize,
+        fontWeight: originalShape.fontWeight,
+        fontStyle: originalShape.fontStyle,
+        textDecoration: originalShape.textDecoration,
+        createdBy: createdBy,
+      };
+      
+      return this.createShape(duplicateData);
+    } catch (error) {
+      console.error('❌ Error duplicating shape:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a shape from the canvas
+   * @param shapeId - The ID of the shape to delete
+   */
+  async deleteShape(shapeId: string): Promise<void> {
+    try {
+      const { deleteDoc } = await import('firebase/firestore');
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      await deleteDoc(shapeDocRef);
+    } catch (error) {
+      console.error('❌ Error deleting shape:', error);
+      throw error;
+    }
   }
 }
 

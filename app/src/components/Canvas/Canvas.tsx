@@ -8,6 +8,7 @@ import { useCanvas } from '../../hooks/useCanvas';
 import { CursorLayer } from '../Collaboration/CursorLayer';
 import { canvasService } from '../../services/canvasService';
 import type { Shape } from '../../services/canvasService';
+import { logger, LogCategory } from '../../utils/logger';
 
 // Constants for rotation handles
 const ROTATION_HANDLE_DISTANCE = 150; // Distance from shape top to rotation handle
@@ -1336,6 +1337,11 @@ export function Canvas() {
               const currentRotation = rotationState.isRotating && rotationState.start?.shapeId === shape.id && rotationState.previewRotation !== null 
                 ? rotationState.previewRotation 
                 : (shape.rotation || 0);
+              
+              // Debug logging for rotation (only in development and for non-zero rotations)
+              if (import.meta.env.DEV && shape.rotation && shape.rotation !== 0) {
+                logger.rendering(`Rendering shape ${shape.id} (${shape.type}) with rotation: ${currentRotation}° (from DB: ${shape.rotation}°)`);
+              }
 
               return (
                 <React.Fragment key={shape.id}>
@@ -1355,8 +1361,8 @@ export function Canvas() {
                       ? (hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y)
                       : (hasOptimisticUpdate ? displayY + displayHeight / 2 : shape.y + shape.height / 2)
                     }
-                    offsetX={0}
-                    offsetY={0}
+                    offsetX={-displayWidth / 2}
+                    offsetY={-displayHeight / 2}
                     rotation={currentRotation}
                     draggable={isDraggable && !hasOptimisticUpdate}
                     onClick={(e) => handleShapeClick(e, shape)}

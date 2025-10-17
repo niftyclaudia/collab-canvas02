@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { CanvasService } from './canvasService';
 import { getSystemPrompt } from '../utils/aiPrompts';
+import { logger, LogCategory } from '../utils/logger';
 
 interface CommandResult {
   success: boolean;
@@ -39,7 +40,7 @@ export class AIService {
           { role: "user", content: prompt }
         ],
         tools: this.getToolDefinitions(),
-        tool_choice: "auto",
+        tool_choice: "required", // Force the AI to use tools
         temperature: 0.1,
         max_tokens: 500
       });
@@ -49,6 +50,17 @@ export class AIService {
       // 3. Execute tool calls
       if (message.tool_calls && message.tool_calls.length > 0) {
         const results = await this.executeToolCalls(message.tool_calls, userId);
+        
+        // Check if only getCanvasState was called (indicates shape not found)
+        const onlyGetCanvasState = results.length === 1 && results[0].tool === 'getCanvasState';
+        if (onlyGetCanvasState) {
+          return {
+            success: false,
+            message: message.content || "I couldn't find the requested shape on the canvas.",
+            toolCalls: results
+          };
+        }
+        
         return {
           success: true,
           message: this.generateSuccessMessage(results),
@@ -99,9 +111,9 @@ export class AIService {
   
   private async executeSingleTool(call: any, userId: string) {
     const { name, arguments: argsStr } = call.function;
-    console.log(`🔧 Parsing tool call: ${name} with args: ${argsStr}`);
+    logger.debug(LogCategory.AI, `Parsing tool call: ${name} with args: ${argsStr}`);
     const args = JSON.parse(argsStr);
-    console.log(`🔧 Parsed args:`, args);
+    logger.debug(LogCategory.AI, `Parsed args: ${JSON.stringify(args)}`);
     
     switch (name) {
       case 'createRectangle':
@@ -149,6 +161,41 @@ export class AIService {
           userId
         );
         
+      // NEW MANIPULATION TOOLS
+      case 'moveShape':
+        return await this.canvasService.updateShape(args.shapeId, {
+          x: args.x,
+          y: args.y
+        });
+        
+      case 'resizeShape':
+        if (args.radius !== undefined) {
+          // Circle resize
+          return await this.canvasService.resizeCircle(args.shapeId, args.radius);
+        } else {
+          // Rectangle/Triangle resize
+          return await this.canvasService.resizeShape(
+            args.shapeId,
+            args.width,
+            args.height
+          );
+        }
+        
+      case 'rotateShape':
+        return await this.canvasService.rotateShape(
+          args.shapeId,
+          args.rotation
+        );
+        
+      case 'duplicateShape':
+        return await this.canvasService.duplicateShape(args.shapeId, userId);
+        
+      case 'deleteShape':
+        return await this.canvasService.deleteShape(args.shapeId);
+        
+      case 'getCanvasState':
+        return await this.canvasService.getShapes();
+        
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -165,31 +212,31 @@ export class AIService {
     
     const toolNames = results.map(r => r.tool);
     
-    // Generate specific messages based on tools used
-    if (toolNames.includes('createRectangle') && toolNames.length === 1) {
-      return '✓ Created 1 rectangle';
-    }
-    
-    if (toolNames.includes('createCircle') && toolNames.length === 1) {
-      return '✓ Created 1 circle';
-    }
-    
-    if (toolNames.includes('createTriangle') && toolNames.length === 1) {
-      return '✓ Created 1 triangle';
-    }
-    
-    if (toolNames.includes('createText') && toolNames.length === 1) {
-      return '✓ Created text layer';
+    // Single tool messages
+    if (toolNames.length === 1) {
+      const tool = toolNames[0];
+      switch (tool) {
+        case 'createRectangle': return '✓ Created 1 rectangle';
+        case 'createCircle': return '✓ Created 1 circle';
+        case 'createTriangle': return '✓ Created 1 triangle';
+        case 'createText': return '✓ Created text layer';
+        case 'moveShape': return '✓ Moved shape to new position';
+        case 'resizeShape': return '✓ Resized shape';
+        case 'rotateShape': return '✓ Rotated shape';
+        case 'duplicateShape': return '✓ Duplicated shape';
+        case 'deleteShape': return '✓ Deleted shape';
+        case 'getCanvasState': return '✓ Retrieved canvas state';
+        default: return '✓ Action completed';
+      }
     }
     
     // Multi-step operations
-    const shapeCount = toolNames.filter(t => 
-      ['createRectangle', 'createCircle', 'createTriangle'].includes(t)
+    const creationCount = toolNames.filter(t => 
+      ['createRectangle', 'createCircle', 'createTriangle', 'createText'].includes(t)
     ).length;
-    const textCount = toolNames.filter(t => t === 'createText').length;
     
-    if (shapeCount > 1 || textCount > 1) {
-      return `✓ Created ${shapeCount + textCount} elements`;
+    if (creationCount > 1) {
+      return `✓ Created ${creationCount} elements`;
     }
     
     return `✓ Completed ${successCount} actions`;
@@ -280,6 +327,98 @@ export class AIService {
               }
             },
             required: ["text", "x", "y"]
+          }
+        }
+      },
+      
+      // NEW MANIPULATION TOOLS
+      {
+        type: "function" as const,
+        function: {
+          name: "moveShape",
+          description: "Moves an existing shape to a new position. MUST call getCanvasState first to find the shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to move" },
+              x: { type: "number", description: "New X position" },
+              y: { type: "number", description: "New Y position" }
+            },
+            required: ["shapeId", "x", "y"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "resizeShape",
+          description: "Changes the dimensions of a shape. For rectangles/triangles use width/height, for circles use radius. MUST call getCanvasState first to find the shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to resize" },
+              width: { type: "number", description: "New width in pixels (for rectangles/triangles)" },
+              height: { type: "number", description: "New height in pixels (for rectangles/triangles)" },
+              radius: { type: "number", description: "New radius in pixels (for circles)" }
+            },
+            required: ["shapeId"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "rotateShape",
+          description: "Rotates a shape by specified degrees. MUST call getCanvasState first to find the shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to rotate" },
+              rotation: { type: "number", description: "Rotation angle in degrees (0-360)" }
+            },
+            required: ["shapeId", "rotation"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "duplicateShape",
+          description: "Creates a copy of an existing shape with a small offset. MUST call getCanvasState first to find the shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to duplicate" }
+            },
+            required: ["shapeId"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "deleteShape",
+          description: "Deletes a shape from the canvas. MUST call getCanvasState first to find the shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to delete" }
+            },
+            required: ["shapeId"]
+          }
+        }
+      },
+      
+      // CANVAS STATE TOOL
+      {
+        type: "function" as const,
+        function: {
+          name: "getCanvasState",
+          description: "Returns all shapes currently on canvas. ALWAYS call this FIRST before manipulating existing shapes to get their IDs and properties.",
+          parameters: {
+            type: "object",
+            properties: {},
+            required: []
           }
         }
       }
