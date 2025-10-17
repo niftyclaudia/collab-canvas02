@@ -411,7 +411,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       }
     } catch (error) {
       // Only log if it's not a "document not found" error (shape was deleted)
-      if (!error.message?.includes('No document to update')) {
+      if (error instanceof Error && !error.message?.includes('No document to update')) {
         console.error('Error unlocking shape:', error);
       }
       throw error;

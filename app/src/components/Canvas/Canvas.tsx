@@ -541,7 +541,7 @@ export function Canvas() {
       // Unlock in background
       unlockShape(shape.id).catch(error => {
         // Only log if it's not a "document not found" error (shape was deleted)
-        if (!error.message?.includes('No document to update')) {
+        if (error instanceof Error && !error.message?.includes('No document to update')) {
           console.error('Failed to unlock shape:', error);
         }
       });
@@ -556,7 +556,7 @@ export function Canvas() {
       // Unlock previous shape in background
       unlockShape(selectedShapeId).catch(error => {
         // Only log if it's not a "document not found" error (shape was deleted)
-        if (!error.message?.includes('No document to update')) {
+        if (error instanceof Error && !error.message?.includes('No document to update')) {
           console.error('Failed to unlock previously selected shape:', error);
         }
       });
