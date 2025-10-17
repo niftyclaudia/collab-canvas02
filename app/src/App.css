@@ -410,12 +410,12 @@
   width: 100%;
 }
 
-.canvas-stage-container.mode-pan {
-  cursor: grab;
+.canvas-stage-container.mode-select {
+  cursor: default;
 }
 
-.canvas-stage-container.mode-pan:active {
-  cursor: grabbing;
+.canvas-stage-container.mode-select:active {
+  cursor: default;
 }
 
 .canvas-stage-container.mode-create {

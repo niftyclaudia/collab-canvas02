@@ -15,7 +15,7 @@ export interface DrawingState {
 }
 
 // Canvas interaction modes
-export type CanvasMode = 'pan' | 'create';
+export type CanvasMode = 'select' | 'create';
 
 // Shape tool types
 export type ShapeTool = 'rectangle' | 'circle' | 'triangle';
@@ -80,13 +80,26 @@ const initialDrawingState: DrawingState = {
 export function CanvasProvider({ children }: CanvasProviderProps) {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [mode, setMode] = useState<CanvasMode>('create'); // Default to create mode
+  const [mode, setMode] = useState<CanvasMode>('select'); // Default to select mode
   const [activeTool, setActiveTool] = useState<ShapeTool>('rectangle'); // Default to rectangle tool
   const [selectedColor, setSelectedColor] = useState<string>(DEFAULT_SHAPE_COLOR);
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [isLoadingShapes, setIsLoadingShapes] = useState<boolean>(true);
   const [drawingState, setDrawingState] = useState<DrawingState>(initialDrawingState);
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const [selectedShapeId, setSelectedShapeIdState] = useState<string | null>(null);
+  
+  // Track manual deselection to prevent useEffect from interfering
+  const manualDeselectionRef = useRef<boolean>(false);
+  
+  // Wrapper function to track manual deselection
+  const setSelectedShapeId = useCallback((shapeId: string | null) => {
+    if (shapeId === null) {
+      manualDeselectionRef.current = true;
+    } else {
+      manualDeselectionRef.current = false;
+    }
+    setSelectedShapeIdState(shapeId);
+  }, []);
   
   // Lock timeout management
   const lockTimeoutRef = useRef<Map<string, number>>(new Map());
@@ -437,11 +450,15 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
 
   // Clean up selected shape when it's no longer locked by me
   useEffect(() => {
-    if (selectedShapeId) {
+    if (selectedShapeId && !manualDeselectionRef.current) {
       const selectedShape = shapes.find(s => s.id === selectedShapeId);
       if (selectedShape && !isShapeLockedByMe(selectedShape)) {
-        setSelectedShapeId(null);
+        setSelectedShapeIdState(null);
       }
+    }
+    // Reset manual deselection flag after processing
+    if (manualDeselectionRef.current) {
+      manualDeselectionRef.current = false;
     }
   }, [selectedShapeId, shapes, isShapeLockedByMe]);
 

@@ -33,6 +33,9 @@ export function Canvas() {
   // Resize handle hover state
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
   
+  // Track shapes that should have selectors hidden (for immediate deselection)
+  const [hiddenSelectors, setHiddenSelectors] = useState<Set<string>>(new Set());
+  
   // Rotation state management - consolidated into single object
   const [rotationState, setRotationState] = useState<{
     isRotating: boolean;
@@ -100,6 +103,7 @@ export function Canvas() {
     shapes, 
     selectedColor, 
     selectedShapeId,
+    setSelectedShapeId,
     drawingState, 
     startDrawing, 
     updateDrawing, 
@@ -167,6 +171,30 @@ export function Canvas() {
       shapeNodesRef.current.clear();
     };
   }, []);
+
+  // Clear hidden selectors when a shape is selected
+  useEffect(() => {
+    if (selectedShapeId) {
+      setHiddenSelectors(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(selectedShapeId);
+        return newSet;
+      });
+    }
+  }, [selectedShapeId]);
+
+  // Clear hidden selectors when shapes are unlocked in Firestore
+  useEffect(() => {
+    shapes.forEach(shape => {
+      if (hiddenSelectors.has(shape.id) && getShapeLockStatus(shape) === 'unlocked') {
+        setHiddenSelectors(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(shape.id);
+          return newSet;
+        });
+      }
+    });
+  }, [shapes, hiddenSelectors, getShapeLockStatus]);
 
   // Register canvas reset function globally for debugging
   useEffect(() => {
@@ -476,16 +504,54 @@ export function Canvas() {
     stage.batchDraw();
   }, []);
 
-  // Shape click handlers
+  // Shape click handlers - simplified for better reliability
   const handleShapeClick = useCallback(async (e: KonvaEventObject<MouseEvent>, shape: Shape) => {
     e.cancelBubble = true; // Prevent event from bubbling to stage
     
-    try {
-      await lockShape(shape.id);
-    } catch (error) {
-      console.error('Failed to lock shape:', error);
+    // If clicking on the same shape, toggle selection
+    if (selectedShapeId === shape.id) {
+      // Deselect current shape
+      setHiddenSelectors(prev => new Set(prev).add(shape.id));
+      setSelectedShapeId(null);
+      forceUpdate();
+      
+      // Unlock in background
+      unlockShape(shape.id).catch(error => {
+        console.error('Failed to unlock shape:', error);
+      });
+      return;
     }
-  }, [lockShape]);
+    
+    // If clicking on a different shape, switch selection
+    if (selectedShapeId && selectedShapeId !== shape.id) {
+      // Hide selector for previously selected shape
+      setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+      
+      // Unlock previous shape in background
+      unlockShape(selectedShapeId).catch(error => {
+        console.error('Failed to unlock previously selected shape:', error);
+      });
+    }
+    
+    // Select the new shape immediately
+    setSelectedShapeId(shape.id);
+    
+    // Clear any hidden selectors for this shape
+    setHiddenSelectors(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(shape.id);
+      return newSet;
+    });
+    
+    // Force re-render to show selector immediately
+    forceUpdate();
+    
+    // Lock the shape in background (don't wait for it)
+    lockShape(shape.id).catch(error => {
+      console.error('Failed to lock shape:', error);
+      // Keep shape selected even if lock fails - user can manually deselect
+    });
+  }, [lockShape, selectedShapeId, unlockShape, setSelectedShapeId, forceUpdate]);
   
   // Handle shape drag movement with boundary constraints
   const handleShapeDragMove = useCallback((e: KonvaEventObject<DragEvent>, shape: Shape) => {
@@ -1138,15 +1204,28 @@ export function Canvas() {
 
   // Background click handler (deselect + drawing)
   const handleStageClick = useCallback((e: KonvaEventObject<MouseEvent>) => {
-    // Check if we clicked on the stage background
+    // Simplified background detection - if we clicked on the stage itself or canvas background
     const targetClass = e.target.getClassName();
+    const targetId = e.target.id();
+    
+    // Check if we clicked on the stage background or canvas background
     const isBackground = targetClass === 'Stage' || 
-                        (targetClass === 'Rect' && e.target.id() === 'canvas-background') ||
-                        targetClass === 'Line';
+                        (targetClass === 'Rect' && targetId === 'canvas-background');
     
     if (isBackground) {
-      // Deselect current shape if any
+      // Deselect current shape if any - clear selection immediately for better UX
       if (selectedShapeId) {
+        console.log('Background click - deselecting shape');
+        // Hide selector immediately by adding to hidden set
+        setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+        
+        // Clear selection immediately to hide selector
+        setSelectedShapeId(null);
+        
+        // Force a re-render to ensure selector disappears immediately
+        forceUpdate();
+        
+        // Unlock shape in background (don't wait for it)
         unlockShape(selectedShapeId).catch(error => {
           console.error('Failed to unlock shape on deselect:', error);
         });
@@ -1175,7 +1254,7 @@ export function Canvas() {
         startDrawing(canvasPos.x, canvasPos.y);
       }
     }
-  }, [mode, selectedShapeId, startDrawing, unlockShape]);
+  }, [mode, selectedShapeId, startDrawing, unlockShape, setSelectedShapeId, forceUpdate]);
 
   const handleMouseMove = useCallback((e: KonvaEventObject<MouseEvent>) => {
     // Handle rotation if active
@@ -1290,6 +1369,27 @@ export function Canvas() {
     }
   }, [shapes, previewDimensions, isResizing]);
 
+  // Handle clicks on the canvas container for deselection
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    // Only deselect if we have a selected shape and we're clicking on the container itself
+    if (selectedShapeId && e.target === e.currentTarget) {
+      console.log('Container click - deselecting shape');
+      // Hide selector immediately by adding to hidden set
+      setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+      
+      // Clear selection immediately to hide selector
+      setSelectedShapeId(null);
+      
+      // Force a re-render to ensure selector disappears immediately
+      forceUpdate();
+      
+      // Unlock shape in background (don't wait for it)
+      unlockShape(selectedShapeId).catch(error => {
+        console.error('Failed to unlock shape on deselect:', error);
+      });
+    }
+  }, [selectedShapeId, setSelectedShapeId, unlockShape, forceUpdate]);
+
   return (
     <div className="canvas-container">
       <div 
@@ -1302,17 +1402,30 @@ export function Canvas() {
           msUserSelect: 'none',
           userSelect: 'none',
         }}
+        onClick={handleContainerClick}
       >
         <Stage
           ref={stageRef}
           width={stageSize.width}
           height={stageSize.height}
-          draggable={!isGesturing && !drawingState.isDrawing && mode === 'pan'}
+          draggable={!isGesturing && !drawingState.isDrawing && mode === 'select'}
           onWheel={handleWheel}
           onDragEnd={handleDragEnd}
           onMouseDown={handleStageClick}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onClick={(e) => {
+            // Fallback deselection - if we clicked on the stage itself, deselect
+            if (e.target === e.target.getStage() && selectedShapeId) {
+              console.log('Stage click - deselecting shape');
+              setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+              setSelectedShapeId(null);
+              forceUpdate();
+              unlockShape(selectedShapeId).catch(error => {
+                console.error('Failed to unlock shape on deselect:', error);
+              });
+            }
+          }}
         >
           <Layer>
             {/* Canvas background - visual indicator of canvas bounds */}
@@ -1347,17 +1460,20 @@ export function Canvas() {
             {shapes.map((shape) => {
               const lockStatus = getShapeLockStatus(shape);
               
-              // Visual styling based on lock status
+              // Use the actual lock status - the selection logic is handled elsewhere
+              const effectiveLockStatus = lockStatus;
+              
+              // Visual styling based on effective lock status
               let strokeColor = shape.color;
               let strokeWidth = 2;
               let opacity = 1;
               let isDraggable = false;
               
-              if (lockStatus === 'locked-by-me') {
+              if (effectiveLockStatus === 'locked-by-me') {
                 strokeColor = '#10b981'; // Green border
                 strokeWidth = 3;
                 isDraggable = true;
-              } else if (lockStatus === 'locked-by-other') {
+              } else if (effectiveLockStatus === 'locked-by-other') {
                 strokeColor = '#ef4444'; // Red border
                 strokeWidth = 3;
                 opacity = 0.5;
@@ -1428,7 +1544,7 @@ export function Canvas() {
                     onClick={(e) => handleShapeClick(e, shape)}
                     onDragMove={(e) => handleShapeDragMove(e, shape)}
                     onDragEnd={(e) => handleShapeDragEnd(e, shape)}
-                    listening={lockStatus !== 'locked-by-other' && !hasOptimisticUpdate}
+                    listening={effectiveLockStatus !== 'locked-by-other' && !hasOptimisticUpdate}
                   >
                     {/* Render shape based on type */}
                     {shape.type === 'rectangle' && (
@@ -1476,7 +1592,7 @@ export function Canvas() {
                     })()}
                     
                     {/* Resize handles - inside the rotated group so they rotate with the shape */}
-                    {lockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && (() => {
+                    {effectiveLockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
@@ -1528,7 +1644,7 @@ export function Canvas() {
                     })()}
                     
                     {/* Rotation handle - inside the rotated group so it rotates with the shape */}
-                    {lockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && (() => {
+                    {effectiveLockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
@@ -1593,7 +1709,7 @@ export function Canvas() {
                   </Group>
                   
                   {/* Lock icon for shapes locked by others */}
-                  {lockStatus === 'locked-by-other' && (
+                  {effectiveLockStatus === 'locked-by-other' && (
                     <Text
                       x={shape.type === 'circle' ? shape.x - 20 : shape.x + shape.width - 20}
                       y={shape.type === 'circle' ? shape.y - (shape.radius || shape.width / 2) + 5 : shape.y + 5}
