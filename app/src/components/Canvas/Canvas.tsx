@@ -1022,15 +1022,30 @@ export function Canvas() {
     
     // Get real-time shape position from node (Bug #2 fix)
     const shapeNode = shapeNodesRef.current.get(shape.id);
-    const shapeX = shapeNode ? shapeNode.x() : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2);
-    const shapeY = shapeNode ? shapeNode.y() : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2);
+    let centerX, centerY;
     
-    // Calculate shape center using real-time coordinates
-    const centerX = shapeX;
-    const centerY = shapeY;
+    if (shapeNode) {
+      // Use real-time position from the node
+      centerX = shapeNode.x();
+      centerY = shapeNode.y();
+    } else {
+      // Calculate center from stored coordinates
+      if (shape.type === 'circle') {
+        centerX = shape.x;
+        centerY = shape.y;
+      } else {
+        // For rectangles and triangles, center is at x + width/2, y + height/2
+        centerX = shape.x + shape.width / 2;
+        centerY = shape.y + shape.height / 2;
+      }
+    }
     
-    // Calculate initial angle from center to mouse
-    const initialAngle = Math.atan2(canvasPos.y - centerY, canvasPos.x - centerX);
+    // Calculate rotation handle position (middle of top edge)
+    const handleX = centerX; // Same X as center (middle of top edge)
+    const handleY = centerY - ROTATION_HANDLE_DISTANCE; // Above the shape center
+    
+    // Calculate initial angle from rotation handle to mouse
+    const initialAngle = Math.atan2(canvasPos.y - handleY, canvasPos.x - handleX);
     
     setRotationState({
       isRotating: true,
@@ -1067,15 +1082,30 @@ export function Canvas() {
     
     // Get real-time shape position from node (Bug #2 fix)
     const shapeNode = shapeNodesRef.current.get(shape.id);
-    const shapeX = shapeNode ? shapeNode.x() : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2);
-    const shapeY = shapeNode ? shapeNode.y() : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2);
+    let centerX, centerY;
     
-    // Calculate shape center using real-time coordinates
-    const centerX = shapeX;
-    const centerY = shapeY;
+    if (shapeNode) {
+      // Use real-time position from the node
+      centerX = shapeNode.x();
+      centerY = shapeNode.y();
+    } else {
+      // Calculate center from stored coordinates
+      if (shape.type === 'circle') {
+        centerX = shape.x;
+        centerY = shape.y;
+      } else {
+        // For rectangles and triangles, center is at x + width/2, y + height/2
+        centerX = shape.x + shape.width / 2;
+        centerY = shape.y + shape.height / 2;
+      }
+    }
     
-    // Calculate current angle from center to mouse
-    const currentAngle = Math.atan2(canvasPos.y - centerY, canvasPos.x - centerX);
+    // Calculate rotation handle position (middle of top edge)
+    const handleX = centerX; // Same X as center (middle of top edge)
+    const handleY = centerY - ROTATION_HANDLE_DISTANCE; // Above the shape center
+    
+    // Calculate current angle from rotation handle to mouse
+    const currentAngle = Math.atan2(canvasPos.y - handleY, canvasPos.x - handleX);
     
     // Calculate angle delta and convert to degrees
     const angleDelta = currentAngle - (rotationState.start?.initialAngle || 0);
@@ -1409,8 +1439,8 @@ export function Canvas() {
                         shapeNodesRef.current.delete(shape.id);
                       }
                     }}
-                    x={hasOptimisticUpdate ? displayX : shape.x}
-                    y={hasOptimisticUpdate ? displayY : shape.y}
+                    x={hasOptimisticUpdate ? displayX + displayWidth / 2 : (shape.type === 'circle' ? shape.x : shape.x + shape.width / 2)}
+                    y={hasOptimisticUpdate ? displayY + displayHeight / 2 : (shape.type === 'circle' ? shape.y : shape.y + shape.height / 2)}
                     offsetX={0}
                     offsetY={0}
                     rotation={currentRotation}
@@ -1423,8 +1453,8 @@ export function Canvas() {
                     {/* Render shape based on type */}
                     {shape.type === 'rectangle' && (
                       <Rect
-                        x={0}
-                        y={0}
+                        x={-displayWidth / 2}
+                        y={-displayHeight / 2}
                         width={displayWidth}
                         height={displayHeight}
                         fill={shape.color}
@@ -1450,9 +1480,8 @@ export function Canvas() {
                     
                     {shape.type === 'triangle' && (() => {
                       const vertices = calculateTriangleVertices(displayWidth, displayHeight);
-                      // For triangles, position vertices relative to top-left corner (like rectangles)
-                      // This makes the triangle appear where the user started dragging
-                      const points = vertices.flatMap(v => [v.x + displayWidth / 2, v.y + displayHeight / 2]);
+                      // For triangles, position vertices relative to center (like rectangles)
+                      const points = vertices.flatMap(v => [v.x, v.y]);
                       return (
                         <Line
                           points={points}
@@ -1484,15 +1513,15 @@ export function Canvas() {
                         { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
                         { x: -offset, y: displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
                       ] : [
-                        // For rectangles and triangles, show all 8 handles (positioned relative to top-left)
-                        { x: -offset, y: -offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
-                        { x: displayWidth / 2 - offset, y: -offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
-                        { x: displayWidth - offset, y: -offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-tr` },
-                        { x: -offset, y: displayHeight / 2 - offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
-                        { x: displayWidth - offset, y: displayHeight / 2 - offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
-                        { x: -offset, y: displayHeight - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-bl` },
-                        { x: displayWidth / 2 - offset, y: displayHeight - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
-                        { x: displayWidth - offset, y: displayHeight - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-br` },
+                        // For rectangles and triangles, show all 8 handles (positioned relative to center)
+                        { x: -displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
+                        { x: -offset, y: -displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
+                        { x: displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-tr` },
+                        { x: -displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
+                        { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
+                        { x: -displayWidth / 2 - offset, y: displayHeight / 2 - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-bl` },
+                        { x: -offset, y: displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
+                        { x: displayWidth / 2 - offset, y: displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-br` },
                       ];
                       
                       return handles.map((handle) => {
@@ -1525,9 +1554,12 @@ export function Canvas() {
                       
                       
                       // Position rotation handle above shape top edge using local coordinates
-                      const handleY = -ROTATION_HANDLE_DISTANCE; // Above the shape top edge
+                      const handleY = -displayHeight / 2 - ROTATION_HANDLE_DISTANCE; // Above the shape top edge
                       const handleSize = 16 / stageScale; // 16px diameter, scaled with zoom
                       const handleRadius = handleSize / 2;
+                      
+                      // Calculate the middle of the top edge for the rotation handle
+                      const handleX = 0; // Middle of the top edge (center of shape)
                       
                       const isHovered = rotationState.hoveredHandle === shape.id;
                       const handleColor = isHovered ? '#3b82f6' : '#ff0000'; // Bright red for maximum visibility
@@ -1538,7 +1570,7 @@ export function Canvas() {
                         <React.Fragment key={`rotation-${shape.id}`}>
                           {/* Connecting line from handle to shape top edge */}
                           <Line
-                            points={[0, handleY, 0, 0]}
+                            points={[handleX, handleY, handleX, -displayHeight / 2]}
                             stroke="#ff0000"
                             strokeWidth={3 / stageScale}
                             dash={[5 / stageScale, 5 / stageScale]}
@@ -1547,7 +1579,7 @@ export function Canvas() {
                           
                           {/* Rotation handle circle */}
                           <Group
-                            x={0}
+                            x={handleX}
                             y={handleY}
                             onMouseEnter={() => setRotationState(prev => ({ ...prev, hoveredHandle: shape.id }))}
                             onMouseLeave={() => setRotationState(prev => ({ ...prev, hoveredHandle: null }))}
@@ -1724,7 +1756,7 @@ export function Canvas() {
                         { x: previewDimensions.width / 2 - offset, y: -offset },
                         { x: -offset, y: previewDimensions.height / 2 - offset },
                       ] : [
-                        // For rectangles and triangles, show all 8 handles
+                        // For rectangles and triangles, show all 8 handles (positioned relative to center)
                         { x: -previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
                         { x: -offset, y: -previewDimensions.height / 2 - offset },
                         { x: previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
@@ -1803,6 +1835,7 @@ export function Canvas() {
               const handleY = realTimeY - ROTATION_HANDLE_DISTANCE;
               
               // Position tooltip with consistent scaling (Bug #3 fix)
+              // Tooltip should be positioned at the rotation handle location (middle of top edge)
               const tooltipX = centerX;
               const tooltipY = handleY - (15 / stageScale);
               
