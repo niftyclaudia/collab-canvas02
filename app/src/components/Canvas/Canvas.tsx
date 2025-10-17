@@ -113,7 +113,7 @@ export function Canvas() {
   // Cursor tracking hook
   const { remoteCursors } = useCursors(stageRef);
   const animationFrameRef = useRef<number | null>(null);
-  const wheelTimeoutRef = useRef<number | null>(null);
+  const wheelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const accumulatedDeltaRef = useRef(0);
   const lastWheelEventRef = useRef<{ pointer: { x: number; y: number } } | null>(null);
   

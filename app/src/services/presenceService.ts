@@ -43,11 +43,6 @@ class PresenceService {
    */
   async setOffline(userId: string): Promise<void> {
     try {
-      
-      // Check if user is still authenticated
-      const { auth } = await import('../firebase');
-      const currentUser = auth.currentUser;
-      
       const presenceRef = ref(database, `sessions/main/users/${userId}/presence`);
       const presenceData: PresenceData = {
         online: false,
@@ -215,7 +210,7 @@ class PresenceService {
    * Note: This function is disabled because it requires admin permissions to modify other users' data
    * The Firebase security rules only allow users to modify their own presence data
    */
-  async cleanupStalePresence(timeoutMinutes: number = 5): Promise<void> {
+  async cleanupStalePresence(): Promise<void> {
     console.log('🧹 cleanupStalePresence called but disabled - requires admin permissions to modify other users');
     // This function is disabled because:
     // 1. Firebase security rules only allow users to modify their own data
