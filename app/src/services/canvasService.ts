@@ -18,7 +18,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 // Shape interface matching the data model from task.md
 export interface Shape {
   id: string;
-  type: 'rectangle' | 'circle' | 'triangle';
+  type: 'rectangle' | 'circle' | 'triangle' | 'text';
   x: number;
   y: number;
   width: number;
@@ -26,6 +26,12 @@ export interface Shape {
   radius?: number; // For circles - radius of the circle
   color: string;
   rotation?: number; // Rotation in degrees (0-360)
+  // Text-specific properties
+  text?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  fontStyle?: string;
+  textDecoration?: string;
   createdBy: string;
   createdAt: Timestamp;
   lockedBy?: string | null;
@@ -35,7 +41,7 @@ export interface Shape {
 
 // Shape creation data (without auto-generated fields)
 export interface CreateShapeData {
-  type: 'rectangle' | 'circle' | 'triangle';
+  type: 'rectangle' | 'circle' | 'triangle' | 'text';
   x: number;
   y: number;
   width: number;
@@ -43,6 +49,12 @@ export interface CreateShapeData {
   radius?: number; // For circles - radius of the circle
   color: string;
   rotation?: number; // Optional rotation field
+  // Text-specific properties
+  text?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  fontStyle?: string;
+  textDecoration?: string;
   createdBy: string;
 }
 
@@ -63,7 +75,7 @@ export interface UpdateShapeData {
  * Canvas Service for managing shapes in Firestore
  * Handles CRUD operations for collaborative shape editing
  */
-class CanvasService {
+export class CanvasService {
   private readonly shapesCollectionPath = 'canvases/main/shapes';
 
   /**
@@ -449,13 +461,18 @@ class CanvasService {
    * @param createdBy - User ID who created the circle
    */
   async createCircle(x: number, y: number, radius: number, color: string, createdBy: string): Promise<Shape> {
+    console.log(`🔍 createCircle called with: x=${x}, y=${y}, radius=${radius}, color=${color}`);
+    
     // Validate minimum radius (5px)
     if (radius < 5) {
       throw new Error('Minimum circle radius is 5 pixels');
     }
 
     // Validate circle bounds
-    if (!this.validateCircleBounds(x, y, radius)) {
+    const boundsCheck = this.validateCircleBounds(x, y, radius);
+    console.log(`🔍 Bounds check: x-radius=${x-radius}>=0, y-radius=${y-radius}>=0, x+radius=${x+radius}<=${CANVAS_WIDTH}, y+radius=${y+radius}<=${CANVAS_HEIGHT}, result=${boundsCheck}`);
+    
+    if (!boundsCheck) {
       throw new Error('Circle would be outside canvas bounds');
     }
 
@@ -500,6 +517,66 @@ class CanvasService {
       width,
       height,
       color,
+      createdBy,
+    };
+
+    return this.createShape(shapeData);
+  }
+
+  /**
+   * Create a text shape on the canvas
+   * @param text - The text content to display
+   * @param x - X position in pixels
+   * @param y - Y position in pixels
+   * @param fontSize - Font size in pixels (default 16)
+   * @param color - Text color hex code (default #000000)
+   * @param fontWeight - Font weight (default normal)
+   * @param fontStyle - Font style (default normal)
+   * @param textDecoration - Text decoration (default none)
+   * @param createdBy - User ID who created the text
+   */
+  async createText(
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number = 16,
+    color: string = '#000000',
+    fontWeight: string = 'normal',
+    fontStyle: string = 'normal',
+    textDecoration: string = 'none',
+    createdBy: string
+  ): Promise<Shape> {
+    // Validate text content
+    if (!text || text.trim().length === 0) {
+      throw new Error('Text content cannot be empty');
+    }
+
+    // Validate font size
+    if (fontSize < 8 || fontSize > 200) {
+      throw new Error('Font size must be between 8 and 200 pixels');
+    }
+
+    // Estimate text dimensions (rough approximation)
+    const estimatedWidth = text.length * fontSize * 0.6;
+    const estimatedHeight = fontSize * 1.2;
+
+    // Validate text bounds
+    if (!this.validateShapeBounds(x, y, estimatedWidth, estimatedHeight)) {
+      throw new Error('Text would be outside canvas bounds');
+    }
+
+    const shapeData: CreateShapeData = {
+      type: 'text',
+      x,
+      y,
+      width: estimatedWidth,
+      height: estimatedHeight,
+      color,
+      text,
+      fontSize,
+      fontWeight,
+      fontStyle,
+      textDecoration,
       createdBy,
     };
 
