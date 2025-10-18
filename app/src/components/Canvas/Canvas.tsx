@@ -1718,8 +1718,8 @@ useEffect(() => {
   // Handle paste shape functionality
   const handlePasteShape = useCallback(async () => {
     const currentClipboard = clipboardRef.current;
-    if (!currentClipboard) {
-      showToast('No shape in clipboard to paste', 'error');
+    if (!currentClipboard || currentClipboard.length === 0) {
+      showToast('No shapes in clipboard to paste', 'error');
       return;
     }
     
@@ -1729,81 +1729,96 @@ useEffect(() => {
     }
     
     try {
-      // Calculate paste position with offset
-      const pasteX = currentClipboard.x + PASTE_OFFSET;
-      const pasteY = currentClipboard.y + PASTE_OFFSET;
+      // Create new shapes for each shape in clipboard
+      const newShapes = currentClipboard.map((shape) => {
+        // Calculate paste position with offset for each shape
+        const pasteX = shape.x + PASTE_OFFSET;
+        const pasteY = shape.y + PASTE_OFFSET;
+        
+        // Create new shape data based on type
+        let newShapeData;
+        
+        if (shape.type === 'rectangle') {
+          newShapeData = {
+            type: 'rectangle' as const,
+            x: pasteX,
+            y: pasteY,
+            width: shape.width,
+            height: shape.height,
+            color: shape.color,
+            rotation: shape.rotation || 0,
+            createdBy: user.uid,
+          };
+        } else if (shape.type === 'circle') {
+          newShapeData = {
+            type: 'circle' as const,
+            x: pasteX,
+            y: pasteY,
+            width: shape.width,
+            height: shape.height,
+            radius: shape.radius || shape.width / 2,
+            color: shape.color,
+            rotation: shape.rotation || 0,
+            createdBy: user.uid,
+          };
+        } else if (shape.type === 'triangle') {
+          newShapeData = {
+            type: 'triangle' as const,
+            x: pasteX,
+            y: pasteY,
+            width: shape.width,
+            height: shape.height,
+            color: shape.color,
+            rotation: shape.rotation || 0,
+            createdBy: user.uid,
+          };
+        } else if (shape.type === 'text') {
+          newShapeData = {
+            type: 'text' as const,
+            x: pasteX,
+            y: pasteY,
+            width: shape.width,
+            height: shape.height,
+            color: shape.color,
+            text: shape.text || 'TEXT',
+            fontSize: shape.fontSize || 16,
+            fontWeight: shape.fontWeight || 'normal',
+            fontStyle: shape.fontStyle || 'normal',
+            textDecoration: shape.textDecoration || 'none',
+            rotation: shape.rotation || 0,
+            createdBy: user.uid,
+          };
+        } else {
+          showToast('Unsupported shape type for paste', 'error');
+          return null;
+        }
+        
+        return newShapeData;
+      });
       
-      // Create new shape data based on type
-      let newShapeData;
+      // Filter out any null shapes (from unsupported types)
+      const validShapes = newShapes.filter(shape => shape !== null);
       
-      if (currentClipboard.type === 'rectangle') {
-        newShapeData = {
-          type: 'rectangle' as const,
-          x: pasteX,
-          y: pasteY,
-          width: currentClipboard.width,
-          height: currentClipboard.height,
-          color: currentClipboard.color,
-          rotation: currentClipboard.rotation || 0,
-          createdBy: user.uid,
-        };
-      } else if (currentClipboard.type === 'circle') {
-        newShapeData = {
-          type: 'circle' as const,
-          x: pasteX,
-          y: pasteY,
-          width: currentClipboard.width,
-          height: currentClipboard.height,
-          radius: currentClipboard.radius || currentClipboard.width / 2,
-          color: currentClipboard.color,
-          rotation: currentClipboard.rotation || 0,
-          createdBy: user.uid,
-        };
-      } else if (currentClipboard.type === 'triangle') {
-        newShapeData = {
-          type: 'triangle' as const,
-          x: pasteX,
-          y: pasteY,
-          width: currentClipboard.width,
-          height: currentClipboard.height,
-          color: currentClipboard.color,
-          rotation: currentClipboard.rotation || 0,
-          createdBy: user.uid,
-        };
-      } else if (currentClipboard.type === 'text') {
-        newShapeData = {
-          type: 'text' as const,
-          x: pasteX,
-          y: pasteY,
-          width: currentClipboard.width,
-          height: currentClipboard.height,
-          color: currentClipboard.color,
-          text: currentClipboard.text || 'TEXT',
-          fontSize: currentClipboard.fontSize || 16,
-          fontWeight: currentClipboard.fontWeight || 'normal',
-          fontStyle: currentClipboard.fontStyle || 'normal',
-          textDecoration: currentClipboard.textDecoration || 'none',
-          rotation: currentClipboard.rotation || 0,
-          createdBy: user.uid,
-        };
-      } else {
-        showToast('Unsupported shape type for paste', 'error');
+      if (validShapes.length === 0) {
+        showToast('No valid shapes to paste', 'error');
         return;
       }
       
-      // Create the new shape using canvasService
-      const newShape = await canvasService.createShape(newShapeData);
+      // Create all new shapes using canvasService
+      const createdShapes = await Promise.all(
+        validShapes.map(shapeData => canvasService.createShape(shapeData))
+      );
       
-      // Auto-select the pasted shape with a small delay to ensure it's rendered
+      // Auto-select all pasted shapes with a small delay to ensure they're rendered
       setTimeout(() => {
-        setSelectedShapes([newShape.id]);
+        setSelectedShapes(createdShapes.map(shape => shape.id));
       }, 100);
       
-      showToast('Shape pasted successfully', 'success');
+      showToast(`${createdShapes.length} shape(s) pasted successfully`, 'success');
       
     } catch (error) {
-      console.error('Failed to paste shape:', error);
-      showToast('Failed to paste shape', 'error');
+      console.error('Failed to paste shapes:', error);
+      showToast('Failed to paste shapes', 'error');
     }
   }, [user, showToast, setSelectedShapes]);
 
