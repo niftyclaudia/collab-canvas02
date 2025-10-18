@@ -38,8 +38,11 @@ export interface CanvasState {
   isLoadingShapes: boolean;
   
   // Selection state
-  selectedShapeId: string | null;
-  setSelectedShapeId: (shapeId: string | null) => void;
+  selectedShapes: string[];
+  setSelectedShapes: (shapeIds: string[]) => void;
+  toggleSelection: (shapeId: string) => void;
+  clearSelection: () => void;
+  markMultiSelect: () => void;
   
   // Drawing state
   drawingState: DrawingState;
@@ -86,19 +89,43 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [isLoadingShapes, setIsLoadingShapes] = useState<boolean>(true);
   const [drawingState, setDrawingState] = useState<DrawingState>(initialDrawingState);
-  const [selectedShapeId, setSelectedShapeIdState] = useState<string | null>(null);
+  const [selectedShapes, setSelectedShapesState] = useState<string[]>([]);
   
   // Track manual deselection to prevent useEffect from interfering
   const manualDeselectionRef = useRef<boolean>(false);
   
+  // Track multi-select operations to prevent auto-deselection
+  const multiSelectRef = useRef<boolean>(false);
+  
   // Wrapper function to track manual deselection
-  const setSelectedShapeId = useCallback((shapeId: string | null) => {
-    if (shapeId === null) {
+  const setSelectedShapes = useCallback((shapeIds: string[]) => {
+    if (shapeIds.length === 0) {
       manualDeselectionRef.current = true;
     } else {
       manualDeselectionRef.current = false;
     }
-    setSelectedShapeIdState(shapeId);
+    setSelectedShapesState(shapeIds);
+  }, []);
+  
+  // Toggle selection for a shape (add if not present, remove if present)
+  const toggleSelection = useCallback((shapeId: string) => {
+    multiSelectRef.current = true; // Mark as multi-select operation
+    setSelectedShapesState(prev => 
+      prev.includes(shapeId) 
+        ? prev.filter(id => id !== shapeId)
+        : [...prev, shapeId]
+    );
+  }, []);
+  
+  // Clear all selections
+  const clearSelection = useCallback(() => {
+    manualDeselectionRef.current = true;
+    setSelectedShapesState([]);
+  }, []);
+  
+  // Mark a multi-select operation to prevent auto-deselection
+  const markMultiSelect = useCallback(() => {
+    multiSelectRef.current = true;
   }, []);
   
   // Lock timeout management
@@ -154,8 +181,8 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const clearCanvas = useCallback(async () => {
     try {
       await canvasService.clearCanvas();
-      // Clear selected shape since canvas is now empty
-      setSelectedShapeId(null);
+      // Clear selected shapes since canvas is now empty
+      setSelectedShapes([]);
       // Clear any drawing state
       setDrawingState(initialDrawingState);
       // Clear all lock timeouts
@@ -358,7 +385,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       const lockAcquired = await canvasService.lockShape(shapeId, user.uid);
       
       if (lockAcquired) {
-        setSelectedShapeId(shapeId);
+        setSelectedShapes([shapeId]);
         
         // Set up auto-unlock timeout (5 seconds)
         const existingTimeout = lockTimeoutRef.current.get(shapeId);
@@ -369,7 +396,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         const timeout = window.setTimeout(async () => {
           try {
             await canvasService.unlockShape(shapeId);
-            setSelectedShapeId(selectedShapeId === shapeId ? null : selectedShapeId);
+            setSelectedShapesState(prev => prev.filter(id => id !== shapeId));
             lockTimeoutRef.current.delete(shapeId);
           } catch (error) {
             console.error('Error auto-unlocking shape:', error);
@@ -401,7 +428,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const unlockShape = useCallback(async (shapeId: string): Promise<void> => {
     try {
       await canvasService.unlockShape(shapeId);
-      setSelectedShapeId(selectedShapeId === shapeId ? null : selectedShapeId);
+      setSelectedShapesState(prev => prev.filter(id => id !== shapeId));
       
       // Clear timeout
       const existingTimeout = lockTimeoutRef.current.get(shapeId);
@@ -451,19 +478,32 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     return shape.lockedBy === user.uid ? 'locked-by-me' : 'locked-by-other';
   }, [user]);
 
-  // Clean up selected shape when it's no longer locked by me
+  // Clean up selected shapes when they're no longer locked by me
+  // Only auto-deselect for individual shape selection (single shape that was locked)
+  // Multi-select operations (Cmd+A, Shift+Click, marquee) should not auto-deselect
   useEffect(() => {
-    if (selectedShapeId && !manualDeselectionRef.current) {
-      const selectedShape = shapes.find(s => s.id === selectedShapeId);
-      if (selectedShape && !isShapeLockedByMe(selectedShape)) {
-        setSelectedShapeIdState(null);
+    if (selectedShapes.length > 0 && !manualDeselectionRef.current && !multiSelectRef.current) {
+      // Only auto-deselect if we have exactly 1 selected shape AND it was previously locked
+      // This prevents auto-deselection for multi-select operations
+      if (selectedShapes.length === 1) {
+        const selectedShapeId = selectedShapes[0];
+        const shape = shapes.find(s => s.id === selectedShapeId);
+        
+        // Only auto-deselect if the shape exists and is not locked by me
+        // This means it was previously locked but is no longer locked
+        if (shape && !isShapeLockedByMe(shape)) {
+          setSelectedShapesState([]);
+        }
       }
     }
-    // Reset manual deselection flag after processing
+    // Reset flags after processing
     if (manualDeselectionRef.current) {
       manualDeselectionRef.current = false;
     }
-  }, [selectedShapeId, shapes, isShapeLockedByMe]);
+    if (multiSelectRef.current) {
+      multiSelectRef.current = false;
+    }
+  }, [selectedShapes, shapes, isShapeLockedByMe]);
 
   // Clean up timeouts on unmount
   useEffect(() => {
@@ -482,8 +522,11 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     setSelectedColor,
     shapes,
     isLoadingShapes,
-    selectedShapeId,
-    setSelectedShapeId,
+    selectedShapes,
+    setSelectedShapes,
+    toggleSelection,
+    clearSelection,
+    markMultiSelect,
     drawingState,
     setDrawingState,
     createShape,

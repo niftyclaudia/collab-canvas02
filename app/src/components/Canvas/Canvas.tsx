@@ -39,6 +39,17 @@ export function Canvas() {
   // Track shapes that should have selectors hidden (for immediate deselection)
   const [hiddenSelectors, setHiddenSelectors] = useState<Set<string>>(new Set());
   
+  // Marquee selection state
+  const [marquee, setMarquee] = useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null>(null);
+  
+  // Track if Shift key is held for marquee selection
+  const [isShiftHeld, setIsShiftHeld] = useState(false);
+  
   // Rotation state management - consolidated into single object
   const [rotationState, setRotationState] = useState<{
     isRotating: boolean;
@@ -71,14 +82,14 @@ export function Canvas() {
   });
   
   // Clipboard state for copy/paste functionality
-  const [clipboard, setClipboard] = useState<Shape | null>(null);
-  const PASTE_OFFSET = 20; // 20px offset for pasted shapes
+  const [clipboard, setClipboard] = useState<Shape[] | null>(null);
+  const PASTE_OFFSET = 30; // 30px offset for pasted shapes
   
   // Ref to track current selection for keyboard shortcuts
-  const selectedShapeIdRef = useRef<string | null>(null);
+  const selectedShapesRef = useRef<string[]>([]);
   
   // Ref to track clipboard for keyboard shortcuts
-  const clipboardRef = useRef<Shape | null>(null);
+  const clipboardRef = useRef<Shape[] | null>(null);
   
   // Force re-render trigger for smooth handle updates with throttling
   const [, setUpdateTrigger] = useState(0);
@@ -126,8 +137,10 @@ export function Canvas() {
     activeTool,
     shapes, 
     selectedColor, 
-    selectedShapeId,
-    setSelectedShapeId,
+    selectedShapes,
+    setSelectedShapes,
+    toggleSelection,
+    markMultiSelect,
     drawingState, 
     startDrawing, 
     updateDrawing, 
@@ -202,18 +215,18 @@ export function Canvas() {
     };
   }, []);
 
-  // Clear hidden selectors when a shape is selected
+  // Clear hidden selectors when shapes are selected
   useEffect(() => {
-    if (selectedShapeId) {
+    if (selectedShapes.length > 0) {
       setHiddenSelectors(prev => {
         const newSet = new Set(prev);
-        newSet.delete(selectedShapeId);
+        selectedShapes.forEach(shapeId => newSet.delete(shapeId));
         return newSet;
       });
     }
-  // Update ref for keyboard shortcuts
-  selectedShapeIdRef.current = selectedShapeId;
-}, [selectedShapeId]);
+    // Update ref for keyboard shortcuts
+    selectedShapesRef.current = selectedShapes;
+  }, [selectedShapes]);
 
 // Update clipboard ref when clipboard state changes
 useEffect(() => {
@@ -545,11 +558,38 @@ useEffect(() => {
   const handleShapeClick = useCallback(async (e: KonvaEventObject<MouseEvent>, shape: Shape) => {
     e.cancelBubble = true; // Prevent event from bubbling to stage
     
-    // If clicking on the same shape, toggle selection
-    if (selectedShapeId === shape.id) {
+    // Check if Shift key is held for multi-select
+    if (e.evt.shiftKey) {
+      // Check if shape is currently selected (before toggle)
+      const wasSelected = selectedShapes.includes(shape.id);
+      
+      // Toggle selection (add if not present, remove if present)
+      toggleSelection(shape.id);
+      
+      // Update controls panel for multi-select
+      if (wasSelected) {
+        // Shape will be deselected, hide controls if no shapes will be selected
+        if (selectedShapes.length === 1) {
+          setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
+        }
+      } else {
+        // Shape will be selected, show controls for multi-select
+        setControlsPanel({ 
+          isVisible: true, 
+          shapeId: shape.id, 
+          position: { x: shape.x, y: shape.y } 
+        });
+      }
+      
+      forceUpdate();
+      return;
+    }
+    
+    // Single selection (no Shift key)
+    if (selectedShapes.length === 1 && selectedShapes[0] === shape.id) {
       // Deselect current shape
       setHiddenSelectors(prev => new Set(prev).add(shape.id));
-      setSelectedShapeId(null);
+      setSelectedShapes([]);
       forceUpdate();
       
       // Hide controls panel
@@ -557,7 +597,6 @@ useEffect(() => {
       
       // Unlock in background
       unlockShape(shape.id).catch(error => {
-        // Only log if it's not a "document not found" error (shape was deleted)
         if (error instanceof Error && !error.message?.includes('No document to update')) {
           console.error('Failed to unlock shape:', error);
         }
@@ -566,21 +605,21 @@ useEffect(() => {
     }
     
     // If clicking on a different shape, switch selection
-    if (selectedShapeId && selectedShapeId !== shape.id) {
-      // Hide selector for previously selected shape
-      setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
-      
-      // Unlock previous shape in background
-      unlockShape(selectedShapeId).catch(error => {
-        // Only log if it's not a "document not found" error (shape was deleted)
-        if (error instanceof Error && !error.message?.includes('No document to update')) {
-          console.error('Failed to unlock previously selected shape:', error);
-        }
+    if (selectedShapes.length > 0) {
+      // Hide selectors for previously selected shapes
+      selectedShapes.forEach(shapeId => {
+        setHiddenSelectors(prev => new Set(prev).add(shapeId));
+        // Unlock previous shapes in background
+        unlockShape(shapeId).catch(error => {
+          if (error instanceof Error && !error.message?.includes('No document to update')) {
+            console.error('Failed to unlock previously selected shape:', error);
+          }
+        });
       });
     }
     
     // Select the new shape immediately
-    setSelectedShapeId(shape.id);
+    setSelectedShapes([shape.id]);
     
     // Clear any hidden selectors for this shape
     setHiddenSelectors(prev => {
@@ -623,7 +662,7 @@ useEffect(() => {
       console.error('Failed to lock shape:', error);
       // Keep shape selected even if lock fails - user can manually deselect
     });
-  }, [lockShape, selectedShapeId, unlockShape, setSelectedShapeId, forceUpdate]);
+  }, [lockShape, selectedShapes, toggleSelection, setSelectedShapes, unlockShape, forceUpdate]);
   
   // Handle shape drag movement with boundary constraints
   const handleShapeDragMove = useCallback((e: KonvaEventObject<DragEvent>, shape: Shape) => {
@@ -631,6 +670,71 @@ useEffect(() => {
     const centerX = node.x();
     const centerY = node.y();
     
+    // Check if multiple shapes are selected for multi-shape dragging
+    if (selectedShapes.length > 1 && selectedShapes.includes(shape.id)) {
+      // Calculate the offset from the original position
+      const originalShape = shapes.find(s => s.id === shape.id);
+      if (originalShape) {
+        let originalCenterX, originalCenterY;
+        
+        if (originalShape.type === 'circle') {
+          originalCenterX = originalShape.x;
+          originalCenterY = originalShape.y;
+        } else {
+          originalCenterX = originalShape.x + originalShape.width / 2;
+          originalCenterY = originalShape.y + originalShape.height / 2;
+        }
+        
+        const deltaX = centerX - originalCenterX;
+        const deltaY = centerY - originalCenterY;
+        
+        // Apply the same offset to all selected shapes
+        selectedShapes.forEach(shapeId => {
+          if (shapeId !== shape.id) {
+            const otherShape = shapes.find(s => s.id === shapeId);
+            const otherNode = shapeNodesRef.current.get(shapeId);
+            
+            if (otherShape && otherNode) {
+              let otherOriginalCenterX, otherOriginalCenterY;
+              
+              if (otherShape.type === 'circle') {
+                otherOriginalCenterX = otherShape.x;
+                otherOriginalCenterY = otherShape.y;
+              } else {
+                otherOriginalCenterX = otherShape.x + otherShape.width / 2;
+                otherOriginalCenterY = otherShape.y + otherShape.height / 2;
+              }
+              
+              const newX = otherOriginalCenterX + deltaX;
+              const newY = otherOriginalCenterY + deltaY;
+              
+              // Apply boundary constraints to the new position
+              if (otherShape.type === 'circle') {
+                const radius = otherShape.radius || otherShape.width / 2;
+                const clampedPosition = canvasService.clampCircleToCanvas(newX, newY, radius);
+                otherNode.x(clampedPosition.x);
+                otherNode.y(clampedPosition.y);
+              } else {
+                const topLeftX = newX - otherShape.width / 2;
+                const topLeftY = newY - otherShape.height / 2;
+                const clampedPosition = canvasService.clampShapeToCanvas(
+                  topLeftX,
+                  topLeftY,
+                  otherShape.width,
+                  otherShape.height
+                );
+                const clampedCenterX = clampedPosition.x + otherShape.width / 2;
+                const clampedCenterY = clampedPosition.y + otherShape.height / 2;
+                otherNode.x(clampedCenterX);
+                otherNode.y(clampedCenterY);
+              }
+            }
+          }
+        });
+      }
+    }
+    
+    // Handle the dragged shape itself with boundary constraints
     if (shape.type === 'circle') {
       // For circles, use center coordinates directly
       const radius = shape.radius || shape.width / 2;
@@ -669,7 +773,7 @@ useEffect(() => {
     
     // Force React re-render for smooth handle position updates
     forceUpdate();
-  }, [forceUpdate]);
+  }, [forceUpdate, selectedShapes, shapes]);
 
   const handleShapeDragEnd = useCallback(async (e: KonvaEventObject<DragEvent>, shape: Shape) => {
     const node = e.target as Konva.Group;
@@ -727,11 +831,80 @@ useEffect(() => {
     }
     
     try {
-      // Update shape position in Firestore
-      await updateShape(shape.id, finalPosition);
-      
-      // Release lock after successful drag
-      await unlockShape(shape.id);
+      // Handle multi-shape dragging
+      if (selectedShapes.length > 1 && selectedShapes.includes(shape.id)) {
+        // Calculate the offset from the original position
+        const originalShape = shapes.find(s => s.id === shape.id);
+        if (originalShape) {
+          let originalCenterX, originalCenterY;
+          
+          if (originalShape.type === 'circle') {
+            originalCenterX = originalShape.x;
+            originalCenterY = originalShape.y;
+          } else {
+            originalCenterX = originalShape.x + originalShape.width / 2;
+            originalCenterY = originalShape.y + originalShape.height / 2;
+          }
+          
+          const deltaX = centerX - originalCenterX;
+          const deltaY = centerY - originalCenterY;
+          
+          // Update all selected shapes in Firestore
+          const updatePromises = selectedShapes.map(async (shapeId) => {
+            const otherShape = shapes.find(s => s.id === shapeId);
+            if (otherShape) {
+              let otherOriginalCenterX, otherOriginalCenterY;
+              
+              if (otherShape.type === 'circle') {
+                otherOriginalCenterX = otherShape.x;
+                otherOriginalCenterY = otherShape.y;
+              } else {
+                otherOriginalCenterX = otherShape.x + otherShape.width / 2;
+                otherOriginalCenterY = otherShape.y + otherShape.height / 2;
+              }
+              
+              const newX = otherOriginalCenterX + deltaX;
+              const newY = otherOriginalCenterY + deltaY;
+              
+              // Apply boundary constraints
+              let finalPosition;
+              if (otherShape.type === 'circle') {
+                const radius = otherShape.radius || otherShape.width / 2;
+                const clampedPosition = canvasService.clampCircleToCanvas(newX, newY, radius);
+                finalPosition = {
+                  x: clampedPosition.x,
+                  y: clampedPosition.y,
+                };
+              } else {
+                const topLeftX = newX - otherShape.width / 2;
+                const topLeftY = newY - otherShape.height / 2;
+                const validatedPosition = canvasService.validateShapePosition(
+                  topLeftX,
+                  topLeftY,
+                  otherShape.width,
+                  otherShape.height
+                );
+                finalPosition = {
+                  x: validatedPosition.x,
+                  y: validatedPosition.y,
+                };
+              }
+              
+              return updateShape(shapeId, finalPosition);
+            }
+            return Promise.resolve();
+          });
+          
+          await Promise.all(updatePromises);
+          
+          // Unlock all selected shapes
+          await Promise.all(selectedShapes.map(shapeId => unlockShape(shapeId)));
+        }
+      } else {
+        // Single shape dragging (existing logic)
+        await updateShape(shape.id, finalPosition);
+        await unlockShape(shape.id);
+      }
     } catch (error) {
       console.error('Failed to update shape position:', error);
       // Reset position on error
@@ -743,7 +916,7 @@ useEffect(() => {
         node.y(shape.y + shape.height / 2);
       }
     }
-  }, [updateShape, unlockShape]);
+  }, [updateShape, unlockShape, selectedShapes, shapes]);
 
   // Resize handle mousedown - start resize
   const handleResizeStart = useCallback((e: KonvaEventObject<MouseEvent>, shape: Shape, handleType: 'corner' | 'edge', handleName: string) => {
@@ -1274,7 +1447,7 @@ useEffect(() => {
     }
   }, [rotationState]);
 
-  // Background click handler (deselect + drawing)
+  // Background click handler (deselect + drawing + marquee)
   const handleStageClick = useCallback(async (e: KonvaEventObject<MouseEvent>) => {
     // Simplified background detection - if we clicked on the stage itself or canvas background
     const targetClass = e.target.getClassName();
@@ -1285,24 +1458,57 @@ useEffect(() => {
                         (targetClass === 'Rect' && targetId === 'canvas-background');
     
     if (isBackground) {
-      // Deselect current shape if any - clear selection immediately for better UX
-      if (selectedShapeId) {
-        console.log('Background click - deselecting shape');
-        // Hide selector immediately by adding to hidden set
-        setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+      // Start marquee selection if not in create mode AND holding Shift key
+      if (mode === 'select' && e.evt.shiftKey) {
+        // Prevent stage dragging when starting marquee
+        e.cancelBubble = true;
         
-        // Clear selection immediately to hide selector
-        setSelectedShapeId(null);
+        const stage = stageRef.current;
+        if (stage) {
+          const stagePos = stage.getAbsolutePosition();
+          const stageScale = stage.scaleX();
+          const pointerPos = stage.getPointerPosition();
+          
+          if (pointerPos) {
+            const canvasPos = {
+              x: (pointerPos.x - stagePos.x) / stageScale,
+              y: (pointerPos.y - stagePos.y) / stageScale
+            };
+            
+            // Start marquee selection
+            setMarquee({
+              startX: canvasPos.x,
+              startY: canvasPos.y,
+              endX: canvasPos.x,
+              endY: canvasPos.y
+            });
+          }
+        }
+        return;
+      }
+      
+      // Deselect all shapes if any - clear selection immediately for better UX
+      if (selectedShapes.length > 0) {
+        console.log('Background click - deselecting all shapes');
+        // Hide selectors immediately by adding to hidden set
+        selectedShapes.forEach(shapeId => {
+          setHiddenSelectors(prev => new Set(prev).add(shapeId));
+        });
+        
+        // Clear selection immediately to hide selectors
+        setSelectedShapes([]);
         
         // Hide controls panel
         setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
         
-        // Force a re-render to ensure selector disappears immediately
+        // Force a re-render to ensure selectors disappear immediately
         forceUpdate();
         
-        // Unlock shape in background (don't wait for it)
-        unlockShape(selectedShapeId).catch(error => {
-          console.error('Failed to unlock shape on deselect:', error);
+        // Unlock all shapes in background (don't wait for it)
+        selectedShapes.forEach(shapeId => {
+          unlockShape(shapeId).catch(error => {
+            console.error('Failed to unlock shape on deselect:', error);
+          });
         });
       }
       
@@ -1349,7 +1555,7 @@ useEffect(() => {
         }
       }
     }
-  }, [mode, activeTool, selectedShapeId, selectedColor, startDrawing, unlockShape, setSelectedShapeId, forceUpdate, showToast, user]);
+  }, [mode, activeTool, selectedShapes, selectedColor, startDrawing, unlockShape, setSelectedShapes, forceUpdate, showToast, user]);
 
   const handleMouseMove = useCallback((e: KonvaEventObject<MouseEvent>) => {
     // Handle rotation if active
@@ -1361,6 +1567,30 @@ useEffect(() => {
     // Handle resize if active
     if (isResizing) {
       handleResizeMove(e);
+      return;
+    }
+    
+    // Handle marquee selection
+    if (marquee) {
+      const stage = stageRef.current;
+      if (stage) {
+        const stagePos = stage.getAbsolutePosition();
+        const stageScale = stage.scaleX();
+        const pointerPos = stage.getPointerPosition();
+        
+        if (pointerPos) {
+          const canvasPos = {
+            x: (pointerPos.x - stagePos.x) / stageScale,
+            y: (pointerPos.y - stagePos.y) / stageScale
+          };
+          
+          setMarquee(prev => prev ? {
+            ...prev,
+            endX: canvasPos.x,
+            endY: canvasPos.y
+          } : null);
+        }
+      }
       return;
     }
     
@@ -1380,7 +1610,7 @@ useEffect(() => {
     };
     
     updateDrawing(canvasPos.x, canvasPos.y);
-  }, [rotationState.isRotating, handleRotationMove, isResizing, handleResizeMove, drawingState.isDrawing, updateDrawing]);
+  }, [rotationState.isRotating, handleRotationMove, isResizing, handleResizeMove, marquee, drawingState.isDrawing, updateDrawing]);
 
   const handleMouseUp = useCallback(() => {
     // Handle rotation end if active
@@ -1392,6 +1622,52 @@ useEffect(() => {
     // Handle resize end if active
     if (isResizing) {
       handleResizeEnd();
+      return;
+    }
+    
+    // Handle marquee selection completion
+    if (marquee) {
+      const marqueeBounds = {
+        x: Math.min(marquee.startX, marquee.endX),
+        y: Math.min(marquee.startY, marquee.endY),
+        width: Math.abs(marquee.endX - marquee.startX),
+        height: Math.abs(marquee.endY - marquee.startY)
+      };
+      
+      // Find shapes that intersect with marquee bounds
+      const intersectingShapes = shapes.filter(shape => {
+        const shapeBounds = {
+          x: shape.x,
+          y: shape.y,
+          width: shape.width,
+          height: shape.height
+        };
+        
+        // Check if shapes intersect
+        return !(shapeBounds.x + shapeBounds.width < marqueeBounds.x ||
+                shapeBounds.x > marqueeBounds.x + marqueeBounds.width ||
+                shapeBounds.y + shapeBounds.height < marqueeBounds.y ||
+                shapeBounds.y > marqueeBounds.y + marqueeBounds.height);
+      });
+      
+      // Check if Shift was held during marquee completion
+      const shouldAddToSelection = false; // For now, always replace selection
+      
+      if (shouldAddToSelection) {
+        // Add to existing selection
+        markMultiSelect();
+        const newShapes = intersectingShapes.map(shape => shape.id);
+        const combined = [...selectedShapes, ...newShapes];
+        setSelectedShapes([...new Set(combined)]); // Remove duplicates
+      } else {
+        // Replace selection with intersecting shapes
+        markMultiSelect();
+        setSelectedShapes(intersectingShapes.map(shape => shape.id));
+      }
+      
+      // Clear marquee and reset Shift state
+      setMarquee(null);
+      setIsShiftHeld(false);
       return;
     }
     
@@ -1415,32 +1691,29 @@ useEffect(() => {
     }
     
     finishDrawing();
-  }, [rotationState.isRotating, handleRotationEnd, isResizing, handleResizeEnd, drawingState.isDrawing, updateDrawing, finishDrawing]);
+  }, [rotationState.isRotating, handleRotationEnd, isResizing, handleResizeEnd, marquee, shapes, selectedShapes, setSelectedShapes, drawingState.isDrawing, updateDrawing, finishDrawing]);
 
   // Handle copy shape functionality
   const handleCopyShape = useCallback(() => {
-    // Try to find any shape that might be selected by looking for shapes with locked-by-me status
-    let selectedShape = null;
+    // Get currently selected shapes
+    const currentSelectedIds = selectedShapesRef.current.length > 0 ? selectedShapesRef.current : selectedShapes;
     
-    // First try the ref and state
-    const currentSelectedId = selectedShapeIdRef.current || selectedShapeId;
-    if (currentSelectedId) {
-      selectedShape = shapes.find(s => s.id === currentSelectedId);
-    }
-    
-    // If no shape found, try to find any shape that's locked by the current user
-    if (!selectedShape && user) {
-      selectedShape = shapes.find(s => s.lockedBy === user.uid);
-    }
-    
-    if (!selectedShape) {
-      showToast('No shape selected to copy', 'error');
+    if (currentSelectedIds.length === 0) {
+      showToast('No shapes selected to copy', 'error');
       return;
     }
     
-    setClipboard(selectedShape);
-    showToast('Shape copied to clipboard', 'success');
-  }, [shapes, showToast, selectedShapeId, user]);
+    // Find all selected shapes
+    const selectedShapesToCopy = shapes.filter(s => currentSelectedIds.includes(s.id));
+    
+    if (selectedShapesToCopy.length === 0) {
+      showToast('No shapes found to copy', 'error');
+      return;
+    }
+    
+    setClipboard(selectedShapesToCopy);
+    showToast(`${selectedShapesToCopy.length} shape(s) copied to clipboard`, 'success');
+  }, [shapes, showToast, selectedShapes, user]);
 
   // Handle paste shape functionality
   const handlePasteShape = useCallback(async () => {
@@ -1521,15 +1794,18 @@ useEffect(() => {
       // Create the new shape using canvasService
       const newShape = await canvasService.createShape(newShapeData);
       
-      // Auto-select the pasted shape
-      setSelectedShapeId(newShape.id);
+      // Auto-select the pasted shape with a small delay to ensure it's rendered
+      setTimeout(() => {
+        setSelectedShapes([newShape.id]);
+      }, 100);
+      
       showToast('Shape pasted successfully', 'success');
       
     } catch (error) {
       console.error('Failed to paste shape:', error);
       showToast('Failed to paste shape', 'error');
     }
-  }, [user, showToast, setSelectedShapeId]);
+  }, [user, showToast, setSelectedShapes]);
 
   // Handle select all functionality
   const handleSelectAll = useCallback(() => {
@@ -1538,30 +1814,99 @@ useEffect(() => {
       return;
     }
     
-    // Select the first available shape
-    const firstShape = shapes[0];
-    setSelectedShapeId(firstShape.id);
-    showToast('Selected shape', 'success');
-  }, [shapes, setSelectedShapeId, showToast]);
+    // Mark as multi-select operation to prevent auto-deselection
+    markMultiSelect();
+    
+    // Select all shapes
+    const allShapeIds = shapes.map(shape => shape.id);
+    setSelectedShapes(allShapeIds);
+    showToast(`Selected ${allShapeIds.length} shapes`, 'success');
+  }, [shapes, setSelectedShapes, showToast, markMultiSelect]);
 
-  // Handle delete selected shape
+  // Handle delete selected shapes
   const handleDeleteSelected = useCallback(async () => {
-    const currentSelectedId = selectedShapeIdRef.current;
-    if (!currentSelectedId) {
-      showToast('No shape selected to delete', 'error');
+    const currentSelectedIds = selectedShapesRef.current.length > 0 ? selectedShapesRef.current : selectedShapes;
+    if (currentSelectedIds.length === 0) {
+      showToast('No shapes selected to delete', 'error');
       return;
     }
     
     try {
-      await canvasService.deleteShape(currentSelectedId);
-      setSelectedShapeId(null);
+      // Delete all selected shapes
+      await Promise.all(currentSelectedIds.map(shapeId => canvasService.deleteShape(shapeId)));
+      setSelectedShapes([]);
       setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
-      showToast('Shape deleted', 'success');
+      showToast(`${currentSelectedIds.length} shape${currentSelectedIds.length > 1 ? 's' : ''} deleted`, 'success');
     } catch (error) {
-      console.error('Failed to delete shape:', error);
-      showToast('Failed to delete shape', 'error');
+      console.error('Failed to delete shapes:', error);
+      showToast('Failed to delete shapes', 'error');
     }
-  }, [setSelectedShapeId, showToast]);
+  }, [setSelectedShapes, showToast]);
+
+  // Handle duplicate shape (single or multiple)
+  const handleDuplicateShape = useCallback(async (shapeId?: string) => {
+    if (!user) return;
+    
+    try {
+      // If shapeId provided, duplicate single shape
+      if (shapeId) {
+        const duplicatedShape = await canvasService.duplicateShape(shapeId, user.uid);
+        // Auto-select the duplicated shape with a small delay to ensure it's rendered
+        setTimeout(() => {
+          setSelectedShapes([duplicatedShape.id]);
+        }, 100);
+        showToast('Shape duplicated', 'success');
+        return;
+      }
+      
+      // Otherwise, duplicate all selected shapes
+      const currentSelectedIds = selectedShapesRef.current.length > 0 ? selectedShapesRef.current : selectedShapes;
+      if (currentSelectedIds.length === 0) {
+        showToast('No shapes selected to duplicate', 'error');
+        return;
+      }
+      
+      // Duplicate all selected shapes with 20px offset
+      const duplicatePromises = currentSelectedIds.map(shapeId => 
+        canvasService.duplicateShape(shapeId, user.uid)
+      );
+      
+      const duplicatedShapes = await Promise.all(duplicatePromises);
+      
+      // Auto-select all duplicated shapes with a small delay to ensure they're rendered
+      setTimeout(() => {
+        setSelectedShapes(duplicatedShapes.map(shape => shape.id));
+      }, 100);
+      
+      showToast(`Duplicated ${currentSelectedIds.length} shape${currentSelectedIds.length > 1 ? 's' : ''}`, 'success');
+    } catch (error) {
+      console.error('Failed to duplicate shape(s):', error);
+      showToast('Failed to duplicate shape(s)', 'error');
+    }
+  }, [user, showToast, selectedShapes, setSelectedShapes]);
+
+  // Track Shift key state for marquee selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftHeld(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftHeld(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // Enhanced keyboard event handler
   useEffect(() => {
@@ -1570,11 +1915,14 @@ useEffect(() => {
       if (e.key === 'Escape') {
         if (drawingState.isDrawing) {
           cancelDrawing();
-        } else if (selectedShapeId) {
-          setSelectedShapeId(null);
+        } else if (selectedShapes.length > 0) {
+          // Deselect all shapes
+          setSelectedShapes([]);
           setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
-          unlockShape(selectedShapeId).catch(error => {
-            console.error('Failed to unlock shape on deselect:', error);
+          selectedShapes.forEach(shapeId => {
+            unlockShape(shapeId).catch(error => {
+              console.error('Failed to unlock shape on deselect:', error);
+            });
           });
         }
         return;
@@ -1601,6 +1949,13 @@ useEffect(() => {
         return;
       }
       
+      // Handle Ctrl+D/Cmd+D for duplicate
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault();
+        handleDuplicateShape();
+        return;
+      }
+      
       // Handle Delete/Backspace for delete
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
@@ -1611,7 +1966,7 @@ useEffect(() => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [drawingState.isDrawing, cancelDrawing, selectedShapeId, setSelectedShapeId, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected]);
+  }, [drawingState.isDrawing, cancelDrawing, selectedShapes, setSelectedShapes, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected, handleDuplicateShape]);
 
   // Clear preview dimensions once Firestore update is confirmed
   useEffect(() => {
@@ -1650,27 +2005,31 @@ useEffect(() => {
 
   // Handle clicks on the canvas container for deselection
   const handleContainerClick = useCallback((e: React.MouseEvent) => {
-    // Only deselect if we have a selected shape and we're clicking on the container itself
-    if (selectedShapeId && e.target === e.currentTarget) {
-      console.log('Container click - deselecting shape');
-      // Hide selector immediately by adding to hidden set
-      setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
+    // Only deselect if we have selected shapes and we're clicking on the container itself
+    if (selectedShapes.length > 0 && e.target === e.currentTarget) {
+      console.log('Container click - deselecting all shapes');
+      // Hide selectors immediately by adding to hidden set
+      selectedShapes.forEach(shapeId => {
+        setHiddenSelectors(prev => new Set(prev).add(shapeId));
+      });
       
-      // Clear selection immediately to hide selector
-      setSelectedShapeId(null);
+      // Clear selection immediately to hide selectors
+      setSelectedShapes([]);
       
       // Hide controls panel
       setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
       
-      // Force a re-render to ensure selector disappears immediately
+      // Force a re-render to ensure selectors disappear immediately
       forceUpdate();
       
-      // Unlock shape in background (don't wait for it)
-      unlockShape(selectedShapeId).catch(error => {
-        console.error('Failed to unlock shape on deselect:', error);
+      // Unlock all shapes in background (don't wait for it)
+      selectedShapes.forEach(shapeId => {
+        unlockShape(shapeId).catch(error => {
+          console.error('Failed to unlock shape on deselect:', error);
+        });
       });
     }
-  }, [selectedShapeId, setSelectedShapeId, unlockShape, forceUpdate]);
+  }, [selectedShapes, setSelectedShapes, unlockShape, forceUpdate]);
 
   // Handle delete shape
   const handleDeleteShape = useCallback(async (shapeId: string) => {
@@ -1683,19 +2042,6 @@ useEffect(() => {
       showToast('Failed to delete shape', 'error');
     }
   }, [showToast]);
-
-  // Handle duplicate shape
-  const handleDuplicateShape = useCallback(async (shapeId: string) => {
-    if (!user) return;
-    
-    try {
-      await canvasService.duplicateShape(shapeId, user.uid);
-      showToast('Shape duplicated', 'success');
-    } catch (error) {
-      console.error('Failed to duplicate shape:', error);
-      showToast('Failed to duplicate shape', 'error');
-    }
-  }, [user, showToast]);
 
   return (
     <div className="canvas-container">
@@ -1715,7 +2061,7 @@ useEffect(() => {
           ref={stageRef}
           width={stageSize.width}
           height={stageSize.height}
-          draggable={!isGesturing && !drawingState.isDrawing && mode === 'select'}
+          draggable={!isGesturing && !drawingState.isDrawing && mode === 'select' && !marquee && !isShiftHeld}
           onWheel={handleWheel}
           onDragEnd={handleDragEnd}
           onMouseDown={handleStageClick}
@@ -1723,13 +2069,17 @@ useEffect(() => {
           onMouseUp={handleMouseUp}
           onClick={(e) => {
             // Fallback deselection - if we clicked on the stage itself, deselect
-            if (e.target === e.target.getStage() && selectedShapeId) {
-              console.log('Stage click - deselecting shape');
-              setHiddenSelectors(prev => new Set(prev).add(selectedShapeId));
-              setSelectedShapeId(null);
+            if (e.target === e.target.getStage() && selectedShapes.length > 0) {
+              console.log('Stage click - deselecting all shapes');
+              selectedShapes.forEach(shapeId => {
+                setHiddenSelectors(prev => new Set(prev).add(shapeId));
+              });
+              setSelectedShapes([]);
               forceUpdate();
-              unlockShape(selectedShapeId).catch(error => {
-                console.error('Failed to unlock shape on deselect:', error);
+              selectedShapes.forEach(shapeId => {
+                unlockShape(shapeId).catch(error => {
+                  console.error('Failed to unlock shape on deselect:', error);
+                });
               });
             }
           }}
@@ -1770,11 +2120,14 @@ useEffect(() => {
               // Use the actual lock status - the selection logic is handled elsewhere
               const effectiveLockStatus = lockStatus;
               
-              // Visual styling based on effective lock status
+              // Visual styling based on effective lock status and selection
               let strokeColor = shape.color;
               let strokeWidth = 2;
               let opacity = 1;
               let isDraggable = false;
+              
+              // Check if shape is selected
+              const isSelected = selectedShapes.includes(shape.id);
               
               if (effectiveLockStatus === 'locked-by-me') {
                 strokeColor = '#10b981'; // Green border
@@ -1784,6 +2137,10 @@ useEffect(() => {
                 strokeColor = '#ef4444'; // Red border
                 strokeWidth = 3;
                 opacity = 0.5;
+              } else if (isSelected) {
+                strokeColor = '#3b82f6'; // Blue border for selection
+                strokeWidth = 3;
+                isDraggable = true;
               }
               
               // Check if we have optimistic preview dimensions for this shape
@@ -1919,7 +2276,7 @@ useEffect(() => {
                     )}
                     
                     {/* Resize handles - inside the rotated group so they rotate with the shape */}
-                    {effectiveLockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && shape.type !== 'text' && (() => {
+                    {(effectiveLockStatus === 'locked-by-me' || selectedShapes.includes(shape.id)) && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && shape.type !== 'text' && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
@@ -1971,7 +2328,7 @@ useEffect(() => {
                     })()}
                     
                     {/* Rotation handle - inside the rotated group so it rotates with the shape */}
-                    {effectiveLockStatus === 'locked-by-me' && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
+                    {(effectiveLockStatus === 'locked-by-me' || selectedShapes.includes(shape.id)) && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
@@ -2299,6 +2656,21 @@ useEffect(() => {
                 </Group>
               );
             })()}
+            
+            {/* Marquee selection rectangle */}
+            {marquee && (
+              <Rect
+                x={Math.min(marquee.startX, marquee.endX)}
+                y={Math.min(marquee.startY, marquee.endY)}
+                width={Math.abs(marquee.endX - marquee.startX)}
+                height={Math.abs(marquee.endY - marquee.startY)}
+                fill="rgba(59, 130, 246, 0.2)"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                dash={[5, 5]}
+                listening={false}
+              />
+            )}
           </Layer>
         </Stage>
         
