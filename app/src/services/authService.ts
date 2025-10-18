@@ -2,7 +2,8 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged
+  onAuthStateChanged,
+  signInWithPopup
 } from 'firebase/auth';
 import { 
   doc, 
@@ -11,7 +12,7 @@ import {
   serverTimestamp,
   Timestamp 
 } from 'firebase/firestore';
-import { auth, firestore } from '../firebase';
+import { auth, firestore, googleProvider } from '../firebase';
 import { CURSOR_COLORS } from '../utils/constants';
 
 // User interface for our app
@@ -110,6 +111,89 @@ class AuthService {
     } catch (error) {
       console.error('❌ Login error:', error);
       console.error('❌ Login error details:', JSON.stringify(error, null, 2));
+      throw error;
+    }
+  }
+
+  /**
+   * Sign in with Google
+   */
+  async signInWithGoogle(): Promise<User> {
+    try {
+      console.log('🚨 GOOGLE SIGNIN ATTEMPT - Google auth service deployed!');
+      
+      // Sign in with Google using popup
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
+
+      // Extract Google user data
+      const displayName = firebaseUser.displayName;
+      const email = firebaseUser.email!;
+      
+      // Generate username from display name or email
+      let username: string;
+      if (displayName) {
+        // Clean display name for username (remove special characters, limit length)
+        username = displayName
+          .replace(/[^a-zA-Z0-9\s]/g, '') // Remove special characters
+          .replace(/\s+/g, '') // Remove spaces
+          .toLowerCase()
+          .substring(0, 20); // Limit length
+        
+        // If username is empty after cleaning, fallback to email prefix
+        if (!username) {
+          username = email.split('@')[0].substring(0, 20);
+        }
+      } else {
+        // Fallback to email prefix if no display name
+        username = email.split('@')[0].substring(0, 20);
+      }
+
+      // Check if user document exists
+      const userDocRef = doc(firestore, 'users', firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (!userDoc.exists()) {
+        console.log('📝 Creating new user document for Google user');
+        
+        // Create new user document
+        const userData: Omit<User, 'uid'> = {
+          email: email,
+          username: username,
+          cursorColor: getRandomCursorColor(),
+          createdAt: serverTimestamp() as Timestamp,
+        };
+
+        await setDoc(userDocRef, userData);
+        
+        return {
+          uid: firebaseUser.uid,
+          ...userData,
+        } as User;
+      } else {
+        console.log('📝 User document exists, returning existing user data');
+        
+        // Return existing user data
+        const userData = userDoc.data() as Omit<User, 'uid'>;
+        return {
+          uid: firebaseUser.uid,
+          ...userData,
+        };
+      }
+    } catch (error) {
+      console.error('❌ Google signin error:', error);
+      
+      // Handle specific Google auth errors
+      if (error instanceof Error) {
+        if (error.message.includes('popup-closed-by-user')) {
+          throw new Error('Google sign-in was cancelled. Please try again.');
+        } else if (error.message.includes('popup-blocked')) {
+          throw new Error('Popup was blocked. Please allow popups and try again.');
+        } else if (error.message.includes('network-request-failed')) {
+          throw new Error('Network error. Please check your connection and try again.');
+        }
+      }
+      
       throw error;
     }
   }
