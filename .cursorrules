@@ -1,0 +1,6 @@
+# Cursor Rules for this project
+
+## Development Server
+- Never run `npm run dev` or similar development server commands automatically
+- Instead, always tell the user to run the command manually
+- Example: "Please run `npm run dev` to start the development server"
