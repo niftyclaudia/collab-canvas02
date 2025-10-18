@@ -455,13 +455,17 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       await canvasService.updateShapeText(editingTextId, editingTextValue);
       // Clear editing state from Firestore
       await canvasService.stopTextEditing(editingTextId);
+      
+      // Maintain selection of the text shape after editing
+      setSelectedShapes([editingTextId]);
+      
       setEditingTextId(null);
       setEditingTextValue(null);
     } catch (error) {
       console.error('Failed to save text edit:', error);
       showToast('Failed to save text changes', 'error');
     }
-  }, [editingTextId, editingTextValue, showToast]);
+  }, [editingTextId, editingTextValue, showToast, setSelectedShapes]);
 
   const cancelTextEdit = useCallback(async () => {
     if (editingTextId) {
@@ -471,10 +475,13 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       } catch (error) {
         console.error('Failed to stop text editing:', error);
       }
+      
+      // Maintain selection of the text shape after cancelling edit
+      setSelectedShapes([editingTextId]);
     }
     setEditingTextId(null);
     setEditingTextValue(null);
-  }, [editingTextId]);
+  }, [editingTextId, setSelectedShapes]);
 
   // Text formatting functions
   const toggleBold = useCallback(() => {
