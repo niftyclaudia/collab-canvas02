@@ -36,6 +36,8 @@ export interface CanvasState {
   // Shapes state
   shapes: Shape[];
   isLoadingShapes: boolean;
+  // Lock status tracking (client-side)
+  lockStatus: Record<string, 'pending' | 'confirmed' | 'expired' | 'failed'>;
   
   // Selection state
   selectedShapes: string[];
@@ -55,6 +57,22 @@ export interface CanvasState {
   updateTextValue: (text: string) => void;
   saveTextEdit: () => Promise<void>;
   cancelTextEdit: () => void;
+  
+  // Text formatting state
+  selectedTextFormatting: {
+    fontWeight: string;
+    fontStyle: string;
+    textDecoration: string;
+    fontSize: number;
+  };
+  toggleBold: () => void;
+  toggleItalic: () => void;
+  toggleUnderline: () => void;
+  setFontSize: (size: number) => void;
+  applyBoldFormatting: () => Promise<void>;
+  applyItalicFormatting: () => Promise<void>;
+  applyUnderlineFormatting: () => Promise<void>;
+  applyFontSizeFormatting: (size: number) => Promise<void>;
   
   // Shape operations
   createShape: (shapeData: Omit<CreateShapeData, 'createdBy'>) => Promise<void>;
@@ -96,32 +114,30 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const [selectedColor, setSelectedColor] = useState<string>(DEFAULT_SHAPE_COLOR);
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [isLoadingShapes, setIsLoadingShapes] = useState<boolean>(true);
+  const [lockStatus, setLockStatus] = useState<Record<string, 'pending' | 'confirmed' | 'expired' | 'failed'>>({});
   const [drawingState, setDrawingState] = useState<DrawingState>(initialDrawingState);
   const [selectedShapes, setSelectedShapesState] = useState<string[]>([]);
   
   // Text editing state
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [editingTextValue, setEditingTextValue] = useState<string | null>(null);
+  // Deprecated refs removed after lockStatus refactor
   
-  // Track manual deselection to prevent useEffect from interfering
-  const manualDeselectionRef = useRef<boolean>(false);
-  
-  // Track multi-select operations to prevent auto-deselection
-  const multiSelectRef = useRef<boolean>(false);
+  // Text formatting state
+  const [selectedTextFormatting, setSelectedTextFormatting] = useState({
+    fontWeight: 'normal',
+    fontStyle: 'normal',
+    textDecoration: 'none',
+    fontSize: 16,
+  });
   
   // Wrapper function to track manual deselection
   const setSelectedShapes = useCallback((shapeIds: string[]) => {
-    if (shapeIds.length === 0) {
-      manualDeselectionRef.current = true;
-    } else {
-      manualDeselectionRef.current = false;
-    }
     setSelectedShapesState(shapeIds);
   }, []);
   
   // Toggle selection for a shape (add if not present, remove if present)
   const toggleSelection = useCallback((shapeId: string) => {
-    multiSelectRef.current = true; // Mark as multi-select operation
     setSelectedShapesState(prev => 
       prev.includes(shapeId) 
         ? prev.filter(id => id !== shapeId)
@@ -131,14 +147,11 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   
   // Clear all selections
   const clearSelection = useCallback(() => {
-    manualDeselectionRef.current = true;
     setSelectedShapesState([]);
   }, []);
   
   // Mark a multi-select operation to prevent auto-deselection
-  const markMultiSelect = useCallback(() => {
-    multiSelectRef.current = true;
-  }, []);
+  const markMultiSelect = useCallback(() => {}, []);
   
   // Lock timeout management
   const lockTimeoutRef = useRef<Map<string, number>>(new Map());
@@ -156,6 +169,21 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     
     const unsubscribe = canvasService.subscribeToShapes((updatedShapes) => {
       setShapes(updatedShapes);
+      // Derive lockStatus for each shape based on backend data
+      setLockStatus(prev => {
+        const newStatus: Record<string, 'pending' | 'confirmed' | 'expired' | 'failed'> = { ...prev };
+        updatedShapes.forEach(shape => {
+          if (shape.lockedBy === user?.uid) {
+            newStatus[shape.id] = 'confirmed';
+          } else {
+            const prevStatus = prev[shape.id];
+            if (prevStatus === 'confirmed' && shape.lockedBy !== user?.uid) {
+              newStatus[shape.id] = 'expired';
+            }
+          }
+        });
+        return newStatus;
+      });
       setIsLoadingShapes(false);
     });
 
@@ -387,10 +415,40 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   }, []);
 
   // Text editing functions
-  const enterTextEdit = useCallback((shapeId: string, initialText: string) => {
-    setEditingTextId(shapeId);
-    setEditingTextValue(initialText);
-  }, []);
+  const enterTextEdit = useCallback(async (shapeId: string, initialText: string) => {
+    if (!user) {
+      console.error('❌ User not authenticated for text editing');
+      return;
+    }
+
+    try {
+      // Try to acquire editing rights
+      const editingStarted = await canvasService.startTextEditing(shapeId, user.uid);
+      
+      if (!editingStarted) {
+        // Get the shape to show who is editing it
+        const shape = shapes.find(s => s.id === shapeId);
+        if (shape?.editingBy) {
+          try {
+            const editorName = await canvasService.getUserDisplayName(shape.editingBy);
+            showToast(`Text is being edited by ${editorName}`, 'error');
+          } catch (error) {
+            showToast('Text is currently being edited by another user', 'error');
+          }
+        } else {
+          showToast('Text is currently being edited by another user', 'error');
+        }
+        return;
+      }
+
+      // Successfully acquired editing rights
+      setEditingTextId(shapeId);
+      setEditingTextValue(initialText);
+    } catch (error) {
+      console.error('❌ Error starting text editing:', error);
+      showToast('Failed to start text editing', 'error');
+    }
+  }, [user, shapes, showToast]);
 
   const updateTextValue = useCallback((text: string) => {
     setEditingTextValue(text);
@@ -401,6 +459,8 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     
     try {
       await canvasService.updateShapeText(editingTextId, editingTextValue);
+      // Clear editing state from Firestore
+      await canvasService.stopTextEditing(editingTextId);
       setEditingTextId(null);
       setEditingTextValue(null);
     } catch (error) {
@@ -409,10 +469,110 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     }
   }, [editingTextId, editingTextValue, showToast]);
 
-  const cancelTextEdit = useCallback(() => {
+  const cancelTextEdit = useCallback(async () => {
+    if (editingTextId) {
+      try {
+        // Clear editing state from Firestore
+        await canvasService.stopTextEditing(editingTextId);
+      } catch (error) {
+        console.error('Failed to stop text editing:', error);
+      }
+    }
     setEditingTextId(null);
     setEditingTextValue(null);
+  }, [editingTextId]);
+
+  // Text formatting functions
+  const toggleBold = useCallback(() => {
+    setSelectedTextFormatting(prev => ({
+      ...prev,
+      fontWeight: prev.fontWeight === 'bold' ? 'normal' : 'bold'
+    }));
   }, []);
+
+  const toggleItalic = useCallback(() => {
+    setSelectedTextFormatting(prev => ({
+      ...prev,
+      fontStyle: prev.fontStyle === 'italic' ? 'normal' : 'italic'
+    }));
+  }, []);
+
+  const toggleUnderline = useCallback(() => {
+    setSelectedTextFormatting(prev => ({
+      ...prev,
+      textDecoration: prev.textDecoration === 'underline' ? 'none' : 'underline'
+    }));
+  }, []);
+
+  const setFontSize = useCallback((size: number) => {
+    // Validate font size (1-500px as per requirements)
+    const validatedSize = Math.max(1, Math.min(500, size));
+    setSelectedTextFormatting(prev => ({
+      ...prev,
+      fontSize: validatedSize
+    }));
+  }, []);
+
+  // Apply formatting to selected text shape
+  const applyBoldFormatting = useCallback(async () => {
+    if (selectedShapes.length === 1) {
+      const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
+      if (selectedShape && selectedShape.type === 'text') {
+        try {
+          await canvasService.toggleTextBold(selectedShape.id);
+          toggleBold(); // Update local state
+        } catch (error) {
+          console.error('Failed to apply bold formatting:', error);
+          showToast('Failed to apply bold formatting', 'error');
+        }
+      }
+    }
+  }, [selectedShapes, shapes, toggleBold, showToast]);
+
+  const applyItalicFormatting = useCallback(async () => {
+    if (selectedShapes.length === 1) {
+      const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
+      if (selectedShape && selectedShape.type === 'text') {
+        try {
+          await canvasService.toggleTextItalic(selectedShape.id);
+          toggleItalic(); // Update local state
+        } catch (error) {
+          console.error('Failed to apply italic formatting:', error);
+          showToast('Failed to apply italic formatting', 'error');
+        }
+      }
+    }
+  }, [selectedShapes, shapes, toggleItalic, showToast]);
+
+  const applyUnderlineFormatting = useCallback(async () => {
+    if (selectedShapes.length === 1) {
+      const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
+      if (selectedShape && selectedShape.type === 'text') {
+        try {
+          await canvasService.toggleTextUnderline(selectedShape.id);
+          toggleUnderline(); // Update local state
+        } catch (error) {
+          console.error('Failed to apply underline formatting:', error);
+          showToast('Failed to apply underline formatting', 'error');
+        }
+      }
+    }
+  }, [selectedShapes, shapes, toggleUnderline, showToast]);
+
+  const applyFontSizeFormatting = useCallback(async (size: number) => {
+    if (selectedShapes.length === 1) {
+      const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
+      if (selectedShape && selectedShape.type === 'text') {
+        try {
+          await canvasService.updateTextFontSize(selectedShape.id, size);
+          setFontSize(size); // Update local state
+        } catch (error) {
+          console.error('Failed to apply font size:', error);
+          showToast('Failed to apply font size', 'error');
+        }
+      }
+    }
+  }, [selectedShapes, shapes, setFontSize, showToast]);
 
   // Locking operations
   const lockShape = useCallback(async (shapeId: string): Promise<boolean> => {
@@ -422,36 +582,46 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     }
 
     try {
+      // Immediately mark as pending
+      setLockStatus(prev => ({ ...prev, [shapeId]: 'pending' }));
+
       const lockAcquired = await canvasService.lockShape(shapeId, user.uid);
-      
+
       if (lockAcquired) {
+        console.log(`🔒 Item ${shapeId} is locked by ${user.username || user.uid}`);
         setSelectedShapes([shapeId]);
-        
+        setLockStatus(prev => ({ ...prev, [shapeId]: 'confirmed' }));
+
         // Set up auto-unlock timeout (5 seconds)
         const existingTimeout = lockTimeoutRef.current.get(shapeId);
         if (existingTimeout) {
           window.clearTimeout(existingTimeout);
         }
-        
+
         const timeout = window.setTimeout(async () => {
           try {
             await canvasService.unlockShape(shapeId);
+            console.log(`🔓 ${shapeId} unlocked (timer)`);
+            setLockStatus(prev => ({ ...prev, [shapeId]: 'expired' }));
             setSelectedShapesState(prev => prev.filter(id => id !== shapeId));
             lockTimeoutRef.current.delete(shapeId);
           } catch (error) {
             console.error('Error auto-unlocking shape:', error);
           }
         }, 5000);
-        
+
         lockTimeoutRef.current.set(shapeId, timeout);
       } else {
+        setLockStatus(prev => ({ ...prev, [shapeId]: 'failed' }));
         // Lock failed - show toast with owner name
         const shape = shapes.find(s => s.id === shapeId);
         if (shape?.lockedBy) {
           try {
             const ownerName = await canvasService.getUserDisplayName(shape.lockedBy);
+            console.log(`🔒 Item ${shapeId} is locked by ${ownerName}`);
             showToast(`Shape locked by ${ownerName}`, 'error');
           } catch (error) {
+            console.log(`🔒 Item ${shapeId} is locked by another user`);
             showToast('Shape is currently locked by another user', 'error');
           }
         }
@@ -468,7 +638,9 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const unlockShape = useCallback(async (shapeId: string): Promise<void> => {
     try {
       await canvasService.unlockShape(shapeId);
+      console.log(`🔓 ${shapeId} unlocked`);
       setSelectedShapesState(prev => prev.filter(id => id !== shapeId));
+      setLockStatus(prev => ({ ...prev, [shapeId]: 'expired' }));
       
       // Clear timeout
       const existingTimeout = lockTimeoutRef.current.get(shapeId);
@@ -518,32 +690,38 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     return shape.lockedBy === user.uid ? 'locked-by-me' : 'locked-by-other';
   }, [user]);
 
-  // Clean up selected shapes when they're no longer locked by me
-  // Only auto-deselect for individual shape selection (single shape that was locked)
-  // Multi-select operations (Cmd+A, Shift+Click, marquee) should not auto-deselect
+  // Clear selection when lockStatus for a selected shape becomes 'expired' or shape deleted
   useEffect(() => {
-    if (selectedShapes.length > 0 && !manualDeselectionRef.current && !multiSelectRef.current) {
-      // Only auto-deselect if we have exactly 1 selected shape AND it was previously locked
-      // This prevents auto-deselection for multi-select operations
-      if (selectedShapes.length === 1) {
-        const selectedShapeId = selectedShapes[0];
-        const shape = shapes.find(s => s.id === selectedShapeId);
-        
-        // Only auto-deselect if the shape exists and is not locked by me
-        // This means it was previously locked but is no longer locked
-        if (shape && !isShapeLockedByMe(shape)) {
-          setSelectedShapesState([]);
-        }
+    if (selectedShapes.length === 0) return;
+
+    const hasExpired = selectedShapes.some(id => lockStatus[id] === 'expired' || !shapes.find(s => s.id === id));
+    if (hasExpired) {
+      setSelectedShapesState([]);
+    }
+  }, [selectedShapes, lockStatus, shapes]);
+
+  // Update text formatting when a text shape is selected
+  useEffect(() => {
+    if (selectedShapes.length === 1) {
+      const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
+      if (selectedShape && selectedShape.type === 'text') {
+        setSelectedTextFormatting({
+          fontWeight: selectedShape.fontWeight || 'normal',
+          fontStyle: selectedShape.fontStyle || 'normal',
+          textDecoration: selectedShape.textDecoration || 'none',
+          fontSize: selectedShape.fontSize || 16,
+        });
       }
+    } else {
+      // Reset to defaults when no text is selected or multiple shapes are selected
+      setSelectedTextFormatting({
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        textDecoration: 'none',
+        fontSize: 16,
+      });
     }
-    // Reset flags after processing
-    if (manualDeselectionRef.current) {
-      manualDeselectionRef.current = false;
-    }
-    if (multiSelectRef.current) {
-      multiSelectRef.current = false;
-    }
-  }, [selectedShapes, shapes, isShapeLockedByMe]);
+  }, [selectedShapes, shapes]);
 
   // Clean up timeouts on unmount
   useEffect(() => {
@@ -562,6 +740,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     setSelectedColor,
     shapes,
     isLoadingShapes,
+    lockStatus,
     selectedShapes,
     setSelectedShapes,
     toggleSelection,
@@ -575,6 +754,15 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     updateTextValue,
     saveTextEdit,
     cancelTextEdit,
+    selectedTextFormatting,
+    toggleBold,
+    toggleItalic,
+    toggleUnderline,
+    setFontSize,
+    applyBoldFormatting,
+    applyItalicFormatting,
+    applyUnderlineFormatting,
+    applyFontSizeFormatting,
     createShape,
     updateShape,
     clearCanvas,

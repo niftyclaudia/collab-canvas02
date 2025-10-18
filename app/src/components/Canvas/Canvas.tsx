@@ -81,6 +81,7 @@ export function Canvas() {
     shapeId: null,
     position: { x: 0, y: 0 }
   });
+
   
   // Clipboard state for copy/paste functionality
   const [clipboard, setClipboard] = useState<Shape[] | null>(null);
@@ -156,7 +157,10 @@ export function Canvas() {
     enterTextEdit,
     updateTextValue,
     saveTextEdit,
-    cancelTextEdit
+    cancelTextEdit,
+    applyBoldFormatting,
+    applyItalicFormatting,
+    applyUnderlineFormatting
   } = useCanvas();
   
   // Toast hook for error messages
@@ -567,6 +571,17 @@ useEffect(() => {
   // Shape click handlers - simplified for better reliability
   const handleShapeClick = useCallback(async (e: KonvaEventObject<MouseEvent>, shape: Shape) => {
     e.cancelBubble = true; // Prevent event from bubbling to stage
+    
+    // Check if shape is locked by another user and show toast notification
+    if (shape.lockedBy && shape.lockedBy !== user?.uid) {
+      try {
+        const ownerName = await canvasService.getUserDisplayName(shape.lockedBy);
+        showToast(`Shape is locked by ${ownerName}`, 'error');
+      } catch (error) {
+        showToast('Shape is currently locked by another user', 'error');
+      }
+      return; // Don't proceed with selection
+    }
     
     // Check if Shift key is held for multi-select
     if (e.evt.shiftKey) {
@@ -1990,11 +2005,38 @@ useEffect(() => {
         handleDeleteSelected();
         return;
       }
+
+      // Text formatting shortcuts - only work when a text shape is selected and not editing
+      if (selectedShapes.length === 1 && !editingTextId) {
+        const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
+        if (selectedShape && selectedShape.type === 'text') {
+          // Handle Ctrl/Cmd + B (Bold)
+          if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+            e.preventDefault();
+            applyBoldFormatting();
+            return;
+          }
+
+          // Handle Ctrl/Cmd + I (Italic)
+          if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+            e.preventDefault();
+            applyItalicFormatting();
+            return;
+          }
+
+          // Handle Ctrl/Cmd + U (Underline)
+          if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
+            e.preventDefault();
+            applyUnderlineFormatting();
+            return;
+          }
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [drawingState.isDrawing, cancelDrawing, selectedShapes, setSelectedShapes, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected, handleDuplicateShape]);
+  }, [drawingState.isDrawing, cancelDrawing, selectedShapes, setSelectedShapes, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected, handleDuplicateShape, editingTextId, shapes, applyBoldFormatting, applyItalicFormatting, applyUnderlineFormatting]);
 
   // Clear preview dimensions once Firestore update is confirmed
   useEffect(() => {
@@ -2030,6 +2072,7 @@ useEffect(() => {
       setPreviewDimensions(null);
     }
   }, [shapes, previewDimensions, isResizing]);
+
 
   // Handle clicks on the canvas container for deselection
   const handleContainerClick = useCallback((e: React.MouseEvent) => {
@@ -2290,39 +2333,75 @@ useEffect(() => {
                     })()}
                     
                     {shape.type === 'text' && (
-                      <Text
-                        text={shape.text || 'TEXT'}
-                        x={-displayWidth / 2}
-                        y={-displayHeight / 2}
-                        width={displayWidth}
-                        height={displayHeight}
-                        fontSize={shape.fontSize || 16}
-                        fontFamily="Arial"
-                        fontStyle={shape.fontStyle || 'normal'}
-                        fontWeight={shape.fontWeight || 'normal'}
-                        textDecoration={shape.textDecoration || 'none'}
-                        fill={shape.color}
-                        opacity={opacity}
-                        listening={true}
-                        align="center"
-                        verticalAlign="middle"
-                        visible={editingTextId !== shape.id}
-                        onDblClick={(e) => {
-                          e.cancelBubble = true; // Prevent canvas deselection
-                          
-                          console.log('🖱️ Double-clicked text shape:', shape.id, 'Text:', shape.text);
-                          
-                          // Check lock system
-                          if (shape.lockedBy && shape.lockedBy !== user?.uid) {
-                            console.log('❌ Text locked by another user');
+                      <>
+                        <Text
+                          text={shape.text || 'TEXT'}
+                          x={-displayWidth / 2}
+                          y={-displayHeight / 2}
+                          width={displayWidth}
+                          height={displayHeight}
+                          fontSize={shape.fontSize || 16}
+                          fontFamily="Arial"
+                          fontStyle={shape.fontStyle || 'normal'}
+                          fontWeight={shape.fontWeight || 'normal'}
+                          textDecoration={shape.textDecoration || 'none'}
+                          fill={shape.color}
+                          opacity={opacity}
+                          listening={true}
+                          align="center"
+                          verticalAlign="middle"
+                          visible={editingTextId !== shape.id}
+                          onDblClick={async (e) => {
+                            e.cancelBubble = true; // Prevent canvas deselection
+                            
+                            console.log('🖱️ Double-clicked text shape:', shape.id, 'Text:', shape.text);
+                            
+                          // Check if text is being edited by another user
+                          if (shape.editingBy && shape.editingBy !== user?.uid) {
+                            console.log('❌ Text is being edited by another user:', shape.editingBy);
+                            // Show toast notification with editor's name
+                            try {
+                              const editorName = await canvasService.getUserDisplayName(shape.editingBy);
+                              showToast(`Text is being edited by ${editorName}`, 'error');
+                            } catch (error) {
+                              showToast('Text is currently being edited by another user', 'error');
+                            }
                             return;
                           }
-                          
-                          // Enter edit mode
-                          console.log('✅ Entering edit mode for text:', shape.text);
-                          enterTextEdit(shape.id, shape.text || 'TEXT');
-                        }}
-                      />
+                            
+                            // Check lock system
+                            if (shape.lockedBy && shape.lockedBy !== user?.uid) {
+                              console.log('❌ Text locked by another user');
+                              // Show toast notification with locker's name
+                              try {
+                                const lockerName = await canvasService.getUserDisplayName(shape.lockedBy);
+                                showToast(`Text is locked by ${lockerName}`, 'error');
+                              } catch (error) {
+                                showToast('Text is currently locked by another user', 'error');
+                              }
+                              return;
+                            }
+                            
+                            // Enter edit mode
+                            console.log('✅ Entering edit mode for text:', shape.text);
+                            enterTextEdit(shape.id, shape.text || 'TEXT');
+                          }}
+                        />
+                        {/* Visual indicator when text is being edited by another user */}
+                        {shape.editingBy && shape.editingBy !== user?.uid && (
+                          <Rect
+                            x={-displayWidth / 2}
+                            y={-displayHeight / 2}
+                            width={displayWidth}
+                            height={displayHeight}
+                            fill="rgba(255, 193, 7, 0.3)"
+                            stroke="#FFC107"
+                            strokeWidth={2}
+                            dash={[5, 5]}
+                            listening={false}
+                          />
+                        )}
+                      </>
                     )}
                     
                     {/* Resize handles - inside the rotated group so they rotate with the shape */}
@@ -2770,6 +2849,7 @@ useEffect(() => {
             onDuplicate={handleDuplicateShape}
           />
         )}
+
       </div>
     </div>
   );

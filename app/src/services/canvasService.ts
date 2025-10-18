@@ -36,6 +36,8 @@ export interface Shape {
   createdAt: Timestamp;
   lockedBy?: string | null;
   lockedAt?: Timestamp | null;
+  editingBy?: string | null; // User currently editing this text
+  editingAt?: Timestamp | null; // When editing started
   updatedAt: Timestamp;
 }
 
@@ -360,6 +362,67 @@ export class CanvasService {
     const lockAge = now - lockedAt.toMillis();
     
     return lockAge > 5000; // 5 second timeout
+  }
+
+  /**
+   * Start editing a text shape
+   * Returns true if editing started, false if already being edited by another user
+   */
+  async startTextEditing(shapeId: string, userId: string): Promise<boolean> {
+    try {
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        console.error('❌ Shape not found for editing:', shapeId);
+        return false;
+      }
+
+      const shapeData = shapeDoc.data() as Shape;
+      const now = Date.now();
+      
+      // Check if shape is already being edited by another user
+      if (shapeData.editingBy && shapeData.editingBy !== userId) {
+        // Check if editing session is still active (less than 30 seconds old)
+        const editingAge = now - (shapeData.editingAt?.toMillis() || 0);
+        
+        if (editingAge < 30000) { // 30 seconds timeout
+          console.log('❌ Text is being edited by another user:', shapeData.editingBy);
+          return false; // Editing acquisition failed
+        }
+      }
+      
+      // Start or refresh the editing session
+      await updateDoc(shapeDocRef, {
+        editingBy: userId,
+        editingAt: serverTimestamp() as Timestamp,
+        updatedAt: serverTimestamp() as Timestamp,
+      });
+
+      console.log('✏️ Started editing text:', shapeId);
+      return true;
+    } catch (error) {
+      console.error('❌ Error starting text editing:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Stop editing a text shape
+   */
+  async stopTextEditing(shapeId: string): Promise<void> {
+    try {
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      await updateDoc(shapeDocRef, {
+        editingBy: null,
+        editingAt: null,
+        updatedAt: serverTimestamp() as Timestamp,
+      });
+      console.log('✏️ Stopped editing text:', shapeId);
+    } catch (error) {
+      console.error('❌ Error stopping text editing:', error);
+      throw error;
+    }
   }
 
   /**
@@ -776,6 +839,140 @@ export class CanvasService {
     } catch (error) {
       console.error('❌ Error updating text:', error);
       throw new Error(`Failed to update text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Toggle bold formatting for a text shape
+   * @param shapeId - The ID of the text shape to update
+   * @throws Error if update fails
+   */
+  async toggleTextBold(shapeId: string): Promise<void> {
+    try {
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const shapeData = shapeDoc.data() as Shape;
+      const currentWeight = shapeData.fontWeight || 'normal';
+      const newWeight = currentWeight === 'bold' ? 'normal' : 'bold';
+      
+      await updateDoc(shapeDocRef, {
+        fontWeight: newWeight,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('❌ Error toggling bold:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Toggle italic formatting for a text shape
+   * @param shapeId - The ID of the text shape to update
+   * @throws Error if update fails
+   */
+  async toggleTextItalic(shapeId: string): Promise<void> {
+    try {
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const shapeData = shapeDoc.data() as Shape;
+      const currentStyle = shapeData.fontStyle || 'normal';
+      const newStyle = currentStyle === 'italic' ? 'normal' : 'italic';
+      
+      await updateDoc(shapeDocRef, {
+        fontStyle: newStyle,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('❌ Error toggling italic:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Toggle underline formatting for a text shape
+   * @param shapeId - The ID of the text shape to update
+   * @throws Error if update fails
+   */
+  async toggleTextUnderline(shapeId: string): Promise<void> {
+    try {
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const shapeData = shapeDoc.data() as Shape;
+      const currentDecoration = shapeData.textDecoration || 'none';
+      const newDecoration = currentDecoration === 'underline' ? 'none' : 'underline';
+      
+      await updateDoc(shapeDocRef, {
+        textDecoration: newDecoration,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('❌ Error toggling underline:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update font size for a text shape with validation
+   * @param shapeId - The ID of the text shape to update
+   * @param fontSize - New font size (1-500px)
+   * @throws Error if update fails or font size is invalid
+   */
+  async updateTextFontSize(shapeId: string, fontSize: number): Promise<void> {
+    try {
+      // Validate font size (1-500px as per requirements)
+      if (fontSize < 1 || fontSize > 500) {
+        throw new Error('Font size must be between 1 and 500 pixels');
+      }
+      
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const shapeData = shapeDoc.data() as Shape;
+      const text = shapeData.text || '';
+      const fontFamily = 'Arial'; // Match the font used in Canvas component
+      
+      // Calculate new dimensions based on font size
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('Could not create canvas context for text measurement');
+      }
+      
+      context.font = `${fontSize}px ${fontFamily}`;
+      const metrics = context.measureText(text);
+      
+      // Calculate new dimensions with padding
+      const newWidth = Math.max(metrics.width + 20, 100); // Add padding, minimum 100px
+      const newHeight = Math.max(fontSize * 1.2, 20); // Minimum height
+      
+      await updateDoc(shapeDocRef, {
+        fontSize: fontSize,
+        width: newWidth,
+        height: newHeight,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('❌ Error updating font size:', error);
+      throw error;
     }
   }
 }
