@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import type { OnlineUser } from '../../hooks/usePresence';
 
 interface TeamIconsProps {

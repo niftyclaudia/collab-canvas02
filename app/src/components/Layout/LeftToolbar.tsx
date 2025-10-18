@@ -1,15 +1,8 @@
-import React from 'react';
 import { useCanvas } from '../../hooks/useCanvas';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../hooks/useAuth';
-import { SHAPE_COLORS } from '../../utils/constants';
 import { canvasService } from '../../services/canvasService';
 // Custom SVG Icon Components
-const HandIcon = ({ size = 20, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-    <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0M6 10v-2a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/>
-  </svg>
-);
 
 const SquareIcon = ({ size = 20, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
@@ -37,44 +30,10 @@ const TypeIcon = ({ size = 20, color = "currentColor" }) => (
   </svg>
 );
 
-const TrashIcon = ({ size = 20, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-    <polyline points="3,6 5,6 21,6"/>
-    <path d="M19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
-    <line x1="10" y1="11" x2="10" y2="17"/>
-    <line x1="14" y1="11" x2="14" y2="17"/>
-  </svg>
-);
 
-const CopyIcon = ({ size = 20, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-  </svg>
-);
 
-const LockIcon = ({ size = 20, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-    <circle cx="12" cy="16" r="1"/>
-    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-  </svg>
-);
 
-const UnlockIcon = ({ size = 20, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-    <circle cx="12" cy="16" r="1"/>
-    <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-  </svg>
-);
 
-const EraserIcon = ({ size = 20, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-    <path d="M7 21l4-4m0 0l4-4m-4 4L7 17m4 4l4-4"/>
-    <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
-  </svg>
-);
 
 export function LeftToolbar() {
   const { 
@@ -214,7 +173,6 @@ export function LeftToolbar() {
           <>
             <div className="toolbar-section">
               {shapeTools.slice(0, 2).map((tool) => {
-                const IconComponent = tool.icon;
                 return (
                   <button
                     key={tool.value}
@@ -235,7 +193,6 @@ export function LeftToolbar() {
             </div>
             <div className="toolbar-section">
               {shapeTools.slice(2, 4).map((tool) => {
-                const IconComponent = tool.icon;
                 return (
                   <button
                     key={tool.value}

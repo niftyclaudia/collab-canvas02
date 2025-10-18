@@ -20,7 +20,6 @@ interface TextEditorOverlayProps {
  * for seamless in-place editing experience
  */
 export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = ({
-  shapeId,
   initialText,
   position,
   fontSize,
