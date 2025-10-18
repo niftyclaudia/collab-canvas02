@@ -730,6 +730,54 @@ export class CanvasService {
       throw error;
     }
   }
+
+  /**
+   * Updates the text content of a text shape
+   * @param shapeId - The ID of the text shape to update
+   * @param text - The new text content
+   * @throws Error if update fails
+   */
+  async updateShapeText(shapeId: string, text: string): Promise<void> {
+    try {
+      // Get the current shape to access its font properties
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const shapeData = shapeDoc.data() as Shape;
+      const fontSize = shapeData.fontSize || 16;
+      const fontFamily = 'Arial'; // Match the font used in Canvas component
+      
+      // Calculate actual text dimensions
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('Could not create canvas context for text measurement');
+      }
+      
+      context.font = `${fontSize}px ${fontFamily}`;
+      const metrics = context.measureText(text);
+      
+      // Calculate new dimensions with padding
+      const newWidth = Math.max(metrics.width + 20, 100); // Add padding, minimum 100px
+      const newHeight = Math.max(fontSize * 1.2, 20); // Minimum height
+      
+      const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      await updateDoc(shapeRef, {
+        text: text,
+        width: newWidth,
+        height: newHeight,
+        updatedAt: serverTimestamp()
+      });
+      console.log('✅ Text updated:', shapeId, 'Dimensions:', newWidth, 'x', newHeight);
+    } catch (error) {
+      console.error('❌ Error updating text:', error);
+      throw new Error(`Failed to update text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 }
 
 // Export singleton instance

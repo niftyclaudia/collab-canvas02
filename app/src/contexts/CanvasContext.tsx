@@ -48,6 +48,14 @@ export interface CanvasState {
   drawingState: DrawingState;
   setDrawingState: (state: DrawingState) => void;
   
+  // Text editing state
+  editingTextId: string | null;
+  editingTextValue: string | null;
+  enterTextEdit: (shapeId: string, initialText: string) => void;
+  updateTextValue: (text: string) => void;
+  saveTextEdit: () => Promise<void>;
+  cancelTextEdit: () => void;
+  
   // Shape operations
   createShape: (shapeData: Omit<CreateShapeData, 'createdBy'>) => Promise<void>;
   updateShape: (shapeId: string, updates: any) => Promise<void>;
@@ -90,6 +98,10 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const [isLoadingShapes, setIsLoadingShapes] = useState<boolean>(true);
   const [drawingState, setDrawingState] = useState<DrawingState>(initialDrawingState);
   const [selectedShapes, setSelectedShapesState] = useState<string[]>([]);
+  
+  // Text editing state
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [editingTextValue, setEditingTextValue] = useState<string | null>(null);
   
   // Track manual deselection to prevent useEffect from interfering
   const manualDeselectionRef = useRef<boolean>(false);
@@ -374,6 +386,34 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     setDrawingState(initialDrawingState);
   }, []);
 
+  // Text editing functions
+  const enterTextEdit = useCallback((shapeId: string, initialText: string) => {
+    setEditingTextId(shapeId);
+    setEditingTextValue(initialText);
+  }, []);
+
+  const updateTextValue = useCallback((text: string) => {
+    setEditingTextValue(text);
+  }, []);
+
+  const saveTextEdit = useCallback(async () => {
+    if (!editingTextId || !editingTextValue) return;
+    
+    try {
+      await canvasService.updateShapeText(editingTextId, editingTextValue);
+      setEditingTextId(null);
+      setEditingTextValue(null);
+    } catch (error) {
+      console.error('Failed to save text edit:', error);
+      showToast('Failed to save text changes', 'error');
+    }
+  }, [editingTextId, editingTextValue, showToast]);
+
+  const cancelTextEdit = useCallback(() => {
+    setEditingTextId(null);
+    setEditingTextValue(null);
+  }, []);
+
   // Locking operations
   const lockShape = useCallback(async (shapeId: string): Promise<boolean> => {
     if (!user) {
@@ -529,6 +569,12 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     markMultiSelect,
     drawingState,
     setDrawingState,
+    editingTextId,
+    editingTextValue,
+    enterTextEdit,
+    updateTextValue,
+    saveTextEdit,
+    cancelTextEdit,
     createShape,
     updateShape,
     clearCanvas,

@@ -12,6 +12,7 @@ import { canvasService } from '../../services/canvasService';
 import type { Shape } from '../../services/canvasService';
 import { logger } from '../../utils/logger';
 import { ShapeControls } from './ShapeControls';
+import TextEditorOverlay from './TextEditorOverlay';
 
 // Constants for rotation handles
 const ROTATION_HANDLE_DISTANCE = 150; // Distance from shape top to rotation handle
@@ -149,7 +150,13 @@ export function Canvas() {
     lockShape,
     unlockShape,
     getShapeLockStatus,
-    updateShape
+    updateShape,
+    editingTextId,
+    editingTextValue,
+    enterTextEdit,
+    updateTextValue,
+    saveTextEdit,
+    cancelTextEdit
   } = useCanvas();
   
   // Toast hook for error messages
@@ -454,6 +461,9 @@ useEffect(() => {
 
     // Skip if we're currently handling touch gestures
     if (isGesturing) return;
+    
+    // Skip if we're editing text
+    if (editingTextId) return;
 
     // Get pointer position relative to stage
     const pointer = stage.getPointerPosition();
@@ -1535,7 +1545,7 @@ useEffect(() => {
         // Handle text creation immediately (no drawing state needed)
         if (activeTool === 'text') {
           try {
-            await canvasService.createText(
+            const newTextShape = await canvasService.createText(
               'TEXT',
               canvasPos.x,
               canvasPos.y,
@@ -1546,6 +1556,9 @@ useEffect(() => {
               'none',
               user!.uid
             );
+            
+            // Auto-enter edit mode for new text
+            enterTextEdit(newTextShape.id, 'TEXT');
           } catch (error) {
             console.error('Failed to create text:', error);
             showToast('Failed to create text. Please try again.', 'error');
@@ -2070,13 +2083,19 @@ useEffect(() => {
           msUserSelect: 'none',
           userSelect: 'none',
         }}
-        onClick={handleContainerClick}
+        onClick={(e) => {
+          // Handle click-outside-to-save for text editing
+          if (editingTextId && e.target === e.currentTarget) {
+            saveTextEdit();
+          }
+          handleContainerClick(e);
+        }}
       >
         <Stage
           ref={stageRef}
           width={stageSize.width}
           height={stageSize.height}
-          draggable={!isGesturing && !drawingState.isDrawing && mode === 'select' && !marquee && !isShiftHeld}
+          draggable={!isGesturing && !drawingState.isDrawing && mode === 'select' && !marquee && !isShiftHeld && !editingTextId}
           onWheel={handleWheel}
           onDragEnd={handleDragEnd}
           onMouseDown={handleStageClick}
@@ -2287,6 +2306,22 @@ useEffect(() => {
                         listening={true}
                         align="center"
                         verticalAlign="middle"
+                        visible={editingTextId !== shape.id}
+                        onDblClick={(e) => {
+                          e.cancelBubble = true; // Prevent canvas deselection
+                          
+                          console.log('🖱️ Double-clicked text shape:', shape.id, 'Text:', shape.text);
+                          
+                          // Check lock system
+                          if (shape.lockedBy && shape.lockedBy !== user?.uid) {
+                            console.log('❌ Text locked by another user');
+                            return;
+                          }
+                          
+                          // Enter edit mode
+                          console.log('✅ Entering edit mode for text:', shape.text);
+                          enterTextEdit(shape.id, shape.text || 'TEXT');
+                        }}
                       />
                     )}
                     
@@ -2691,6 +2726,39 @@ useEffect(() => {
         
         {/* Cursor overlay layer */}
         <CursorLayer cursors={remoteCursors} stageRef={stageRef} />
+        
+        {/* Text Editor Overlay */}
+        {editingTextId && editingTextValue !== null && (() => {
+          const editingShape = shapes.find(shape => shape.id === editingTextId);
+          if (!editingShape || editingShape.type !== 'text') return null;
+          
+          const stage = stageRef.current;
+          if (!stage) return null;
+          
+          // Calculate overlay position
+          const stagePosition = stage.position();
+          const zoom = stage.scaleX();
+          const containerRect = document.querySelector('.canvas-stage-container')?.getBoundingClientRect();
+          if (!containerRect) return null;
+          
+          const screenX = (editingShape.x * zoom) + stagePosition.x + containerRect.left;
+          const screenY = (editingShape.y * zoom) + stagePosition.y + containerRect.top;
+          
+          return (
+            <TextEditorOverlay
+              shapeId={editingTextId}
+              initialText={editingTextValue}
+              position={{ x: screenX, y: screenY }}
+              fontSize={editingShape.fontSize || 16}
+              fontFamily="Arial"
+              color={editingShape.color}
+              zoom={zoom}
+              onTextChange={updateTextValue}
+              onSave={saveTextEdit}
+              onCancel={cancelTextEdit}
+            />
+          );
+        })()}
         
         {/* Shape controls panel */}
         {controlsPanel.isVisible && controlsPanel.shapeId && (
