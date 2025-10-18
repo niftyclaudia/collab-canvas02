@@ -1,19 +1,21 @@
 import { useAuth } from '../../hooks/useAuth';
+import { usePresence } from '../../hooks/usePresence';
+import TeamIcons from './TeamIcons';
 
 export function Navbar() {
   const { user, logout, loading } = useAuth();
+  const { onlineUsers, currentUser, totalOnlineCount } = usePresence();
 
   const handleLogout = async () => {
     try {
       await logout();
     } catch (error) {
       console.error('Logout error:', error);
-      // Could show a toast notification here
     }
   };
 
   if (!user) {
-    return null; // Don't show navbar when not authenticated
+    return null;
   }
 
   return (
@@ -23,16 +25,12 @@ export function Navbar() {
           <h1>CollabCanvas</h1>
         </div>
 
-
-        <div className="navbar-user">
-          <div className="user-info">
-            <div 
-              className="user-color-indicator" 
-              style={{ backgroundColor: user.cursorColor }}
-              title="Your cursor color"
-            />
-            <span className="username">{user.username}</span>
-          </div>
+        <div className="navbar-right">
+          <TeamIcons 
+            onlineUsers={onlineUsers}
+            currentUser={currentUser}
+            totalOnlineCount={totalOnlineCount}
+          />
           
           <button 
             onClick={handleLogout} 

@@ -11,7 +11,6 @@ import { CursorLayer } from '../Collaboration/CursorLayer';
 import { canvasService } from '../../services/canvasService';
 import type { Shape } from '../../services/canvasService';
 import { logger } from '../../utils/logger';
-import { ShapeControls } from './ShapeControls';
 import TextEditorOverlay from './TextEditorOverlay';
 
 // Constants for rotation handles
@@ -71,16 +70,6 @@ export function Canvas() {
   // Track shape node refs for real-time position updates during drag
   const shapeNodesRef = useRef<Map<string, Konva.Group>>(new Map());
   
-  // Controls panel state for delete/duplicate buttons
-  const [controlsPanel, setControlsPanel] = useState<{
-    isVisible: boolean;
-    shapeId: string | null;
-    position: { x: number; y: number };
-  }>({
-    isVisible: false,
-    shapeId: null,
-    position: { x: 0, y: 0 }
-  });
 
   
   // Clipboard state for copy/paste functionality
@@ -585,26 +574,8 @@ useEffect(() => {
     
     // Check if Shift key is held for multi-select
     if (e.evt.shiftKey) {
-      // Check if shape is currently selected (before toggle)
-      const wasSelected = selectedShapes.includes(shape.id);
-      
       // Toggle selection (add if not present, remove if present)
       toggleSelection(shape.id);
-      
-      // Update controls panel for multi-select
-      if (wasSelected) {
-        // Shape will be deselected, hide controls if no shapes will be selected
-        if (selectedShapes.length === 1) {
-          setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
-        }
-      } else {
-        // Shape will be selected, show controls for multi-select
-        setControlsPanel({ 
-          isVisible: true, 
-          shapeId: shape.id, 
-          position: { x: shape.x, y: shape.y } 
-        });
-      }
       
       forceUpdate();
       return;
@@ -618,7 +589,6 @@ useEffect(() => {
       forceUpdate();
       
       // Hide controls panel
-      setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
       
       // Unlock in background
       unlockShape(shape.id).catch(error => {
@@ -657,33 +627,7 @@ useEffect(() => {
     forceUpdate();
     
     // Lock the shape in background (don't wait for it)
-    lockShape(shape.id).then(() => {
-      // Show controls panel when shape is successfully locked
-      const stage = stageRef.current;
-      if (stage) {
-        const stagePos = stage.getAbsolutePosition();
-        const stageScale = stage.scaleX();
-        
-        // Calculate position above the shape
-        let shapeX, shapeY;
-        if (shape.type === 'circle') {
-          shapeX = shape.x;
-          shapeY = shape.y;
-        } else {
-          shapeX = shape.x + shape.width / 2;
-          shapeY = shape.y + shape.height / 2;
-        }
-        
-        setControlsPanel({
-          isVisible: true,
-          shapeId: shape.id,
-          position: {
-            x: (shapeX + stagePos.x) / stageScale,
-            y: (shapeY + stagePos.y) / stageScale - 50 // 50px above shape
-          }
-        });
-      }
-    }).catch(error => {
+    lockShape(shape.id).catch(error => {
       console.error('Failed to lock shape:', error);
       // Keep shape selected even if lock fails - user can manually deselect
     });
@@ -1524,7 +1468,6 @@ useEffect(() => {
         setSelectedShapes([]);
         
         // Hide controls panel
-        setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
         
         // Force a re-render to ensure selectors disappear immediately
         forceUpdate();
@@ -1878,7 +1821,6 @@ useEffect(() => {
       // Delete all selected shapes
       await Promise.all(currentSelectedIds.map(shapeId => canvasService.deleteShape(shapeId)));
       setSelectedShapes([]);
-      setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
       showToast(`${currentSelectedIds.length} shape${currentSelectedIds.length > 1 ? 's' : ''} deleted`, 'success');
     } catch (error) {
       console.error('Failed to delete shapes:', error);
@@ -1961,7 +1903,6 @@ useEffect(() => {
         } else if (selectedShapes.length > 0) {
           // Deselect all shapes
           setSelectedShapes([]);
-          setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
           selectedShapes.forEach(shapeId => {
             unlockShape(shapeId).catch(error => {
               console.error('Failed to unlock shape on deselect:', error);
@@ -2088,7 +2029,6 @@ useEffect(() => {
       setSelectedShapes([]);
       
       // Hide controls panel
-      setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
       
       // Force a re-render to ensure selectors disappear immediately
       forceUpdate();
@@ -2102,17 +2042,6 @@ useEffect(() => {
     }
   }, [selectedShapes, setSelectedShapes, unlockShape, forceUpdate]);
 
-  // Handle delete shape
-  const handleDeleteShape = useCallback(async (shapeId: string) => {
-    try {
-      await canvasService.deleteShape(shapeId);
-      setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
-      showToast('Shape deleted', 'success');
-    } catch (error) {
-      console.error('Failed to delete shape:', error);
-      showToast('Failed to delete shape', 'error');
-    }
-  }, [showToast]);
 
   return (
     <div className="canvas-container">
@@ -2839,16 +2768,6 @@ useEffect(() => {
           );
         })()}
         
-        {/* Shape controls panel */}
-        {controlsPanel.isVisible && controlsPanel.shapeId && (
-          <ShapeControls
-            shapeId={controlsPanel.shapeId}
-            isVisible={controlsPanel.isVisible}
-            position={controlsPanel.position}
-            onDelete={handleDeleteShape}
-            onDuplicate={handleDuplicateShape}
-          />
-        )}
 
       </div>
     </div>
