@@ -70,6 +70,16 @@ export function Canvas() {
     position: { x: 0, y: 0 }
   });
   
+  // Clipboard state for copy/paste functionality
+  const [clipboard, setClipboard] = useState<Shape | null>(null);
+  const PASTE_OFFSET = 20; // 20px offset for pasted shapes
+  
+  // Ref to track current selection for keyboard shortcuts
+  const selectedShapeIdRef = useRef<string | null>(null);
+  
+  // Ref to track clipboard for keyboard shortcuts
+  const clipboardRef = useRef<Shape | null>(null);
+  
   // Force re-render trigger for smooth handle updates with throttling
   const [, setUpdateTrigger] = useState(0);
   const forceUpdateRef = useRef<number | null>(null);
@@ -201,7 +211,14 @@ export function Canvas() {
         return newSet;
       });
     }
-  }, [selectedShapeId]);
+  // Update ref for keyboard shortcuts
+  selectedShapeIdRef.current = selectedShapeId;
+}, [selectedShapeId]);
+
+// Update clipboard ref when clipboard state changes
+useEffect(() => {
+  clipboardRef.current = clipboard;
+}, [clipboard]);
 
   // Clear hidden selectors when shapes are unlocked in Firestore
   useEffect(() => {
@@ -1400,17 +1417,201 @@ export function Canvas() {
     finishDrawing();
   }, [rotationState.isRotating, handleRotationEnd, isResizing, handleResizeEnd, drawingState.isDrawing, updateDrawing, finishDrawing]);
 
-  // Cancel drawing on Escape key
+  // Handle copy shape functionality
+  const handleCopyShape = useCallback(() => {
+    // Try to find any shape that might be selected by looking for shapes with locked-by-me status
+    let selectedShape = null;
+    
+    // First try the ref and state
+    const currentSelectedId = selectedShapeIdRef.current || selectedShapeId;
+    if (currentSelectedId) {
+      selectedShape = shapes.find(s => s.id === currentSelectedId);
+    }
+    
+    // If no shape found, try to find any shape that's locked by the current user
+    if (!selectedShape && user) {
+      selectedShape = shapes.find(s => s.lockedBy === user.uid);
+    }
+    
+    if (!selectedShape) {
+      showToast('No shape selected to copy', 'error');
+      return;
+    }
+    
+    setClipboard(selectedShape);
+    showToast('Shape copied to clipboard', 'success');
+  }, [shapes, showToast, selectedShapeId, user]);
+
+  // Handle paste shape functionality
+  const handlePasteShape = useCallback(async () => {
+    const currentClipboard = clipboardRef.current;
+    if (!currentClipboard) {
+      showToast('No shape in clipboard to paste', 'error');
+      return;
+    }
+    
+    if (!user) {
+      showToast('User not authenticated', 'error');
+      return;
+    }
+    
+    try {
+      // Calculate paste position with offset
+      const pasteX = currentClipboard.x + PASTE_OFFSET;
+      const pasteY = currentClipboard.y + PASTE_OFFSET;
+      
+      // Create new shape data based on type
+      let newShapeData;
+      
+      if (currentClipboard.type === 'rectangle') {
+        newShapeData = {
+          type: 'rectangle' as const,
+          x: pasteX,
+          y: pasteY,
+          width: currentClipboard.width,
+          height: currentClipboard.height,
+          color: currentClipboard.color,
+          rotation: currentClipboard.rotation || 0,
+          createdBy: user.uid,
+        };
+      } else if (currentClipboard.type === 'circle') {
+        newShapeData = {
+          type: 'circle' as const,
+          x: pasteX,
+          y: pasteY,
+          width: currentClipboard.width,
+          height: currentClipboard.height,
+          radius: currentClipboard.radius || currentClipboard.width / 2,
+          color: currentClipboard.color,
+          rotation: currentClipboard.rotation || 0,
+          createdBy: user.uid,
+        };
+      } else if (currentClipboard.type === 'triangle') {
+        newShapeData = {
+          type: 'triangle' as const,
+          x: pasteX,
+          y: pasteY,
+          width: currentClipboard.width,
+          height: currentClipboard.height,
+          color: currentClipboard.color,
+          rotation: currentClipboard.rotation || 0,
+          createdBy: user.uid,
+        };
+      } else if (currentClipboard.type === 'text') {
+        newShapeData = {
+          type: 'text' as const,
+          x: pasteX,
+          y: pasteY,
+          width: currentClipboard.width,
+          height: currentClipboard.height,
+          color: currentClipboard.color,
+          text: currentClipboard.text || 'TEXT',
+          fontSize: currentClipboard.fontSize || 16,
+          fontWeight: currentClipboard.fontWeight || 'normal',
+          fontStyle: currentClipboard.fontStyle || 'normal',
+          textDecoration: currentClipboard.textDecoration || 'none',
+          rotation: currentClipboard.rotation || 0,
+          createdBy: user.uid,
+        };
+      } else {
+        showToast('Unsupported shape type for paste', 'error');
+        return;
+      }
+      
+      // Create the new shape using canvasService
+      const newShape = await canvasService.createShape(newShapeData);
+      
+      // Auto-select the pasted shape
+      setSelectedShapeId(newShape.id);
+      showToast('Shape pasted successfully', 'success');
+      
+    } catch (error) {
+      console.error('Failed to paste shape:', error);
+      showToast('Failed to paste shape', 'error');
+    }
+  }, [user, showToast, setSelectedShapeId]);
+
+  // Handle select all functionality
+  const handleSelectAll = useCallback(() => {
+    if (shapes.length === 0) {
+      showToast('No shapes on canvas to select', 'error');
+      return;
+    }
+    
+    // Select the first available shape
+    const firstShape = shapes[0];
+    setSelectedShapeId(firstShape.id);
+    showToast('Selected shape', 'success');
+  }, [shapes, setSelectedShapeId, showToast]);
+
+  // Handle delete selected shape
+  const handleDeleteSelected = useCallback(async () => {
+    const currentSelectedId = selectedShapeIdRef.current;
+    if (!currentSelectedId) {
+      showToast('No shape selected to delete', 'error');
+      return;
+    }
+    
+    try {
+      await canvasService.deleteShape(currentSelectedId);
+      setSelectedShapeId(null);
+      setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
+      showToast('Shape deleted', 'success');
+    } catch (error) {
+      console.error('Failed to delete shape:', error);
+      showToast('Failed to delete shape', 'error');
+    }
+  }, [setSelectedShapeId, showToast]);
+
+  // Enhanced keyboard event handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && drawingState.isDrawing) {
-        cancelDrawing();
+      // Handle Escape key - deselect shape or cancel drawing
+      if (e.key === 'Escape') {
+        if (drawingState.isDrawing) {
+          cancelDrawing();
+        } else if (selectedShapeId) {
+          setSelectedShapeId(null);
+          setControlsPanel({ isVisible: false, shapeId: null, position: { x: 0, y: 0 } });
+          unlockShape(selectedShapeId).catch(error => {
+            console.error('Failed to unlock shape on deselect:', error);
+          });
+        }
+        return;
+      }
+      
+      // Handle Ctrl+C/Cmd+C for copy
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        e.preventDefault();
+        handleCopyShape();
+        return;
+      }
+      
+      // Handle Ctrl+V/Cmd+V for paste
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        handlePasteShape();
+        return;
+      }
+      
+      // Handle Ctrl+A/Cmd+A for select all
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        handleSelectAll();
+        return;
+      }
+      
+      // Handle Delete/Backspace for delete
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleDeleteSelected();
+        return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [drawingState.isDrawing, cancelDrawing]);
+  }, [drawingState.isDrawing, cancelDrawing, selectedShapeId, setSelectedShapeId, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected]);
 
   // Clear preview dimensions once Firestore update is confirmed
   useEffect(() => {
