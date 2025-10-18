@@ -8,6 +8,7 @@ interface AuthContextType {
   loading: boolean;
   signup: (email: string, password: string, username: string) => Promise<User>;
   login: (email: string, password: string) => Promise<User>;
+  signInWithGoogle: () => Promise<User>;
   logout: () => Promise<void>;
 }
 
@@ -71,6 +72,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
+  const signInWithGoogle = async (): Promise<User> => {
+    setLoading(true);
+    try {
+      const user = await authService.signInWithGoogle();
+      return user;
+    } catch (error) {
+      setLoading(false);
+      throw error;
+    }
+  };
+
   const logout = async (): Promise<void> => {
     setLoading(true);
     try {
@@ -98,6 +110,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     loading,
     signup,
     login,
+    signInWithGoogle,
     logout,
   };
 

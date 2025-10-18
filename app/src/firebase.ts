@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, connectAuthEmulator, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getDatabase, connectDatabaseEmulator } from 'firebase/database';
 
@@ -21,6 +21,11 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const firestore = getFirestore(app);
 export const database = getDatabase(app);
+
+// Configure Google Auth Provider
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('email');
+googleProvider.addScope('profile');
 
 // Debug information
 console.log('🔥 Firebase Configuration Debug Info:');
