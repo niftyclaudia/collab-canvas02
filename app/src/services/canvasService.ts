@@ -306,7 +306,6 @@ export class CanvasService {
         const lockAge = now - (shapeData.lockedAt?.toMillis() || 0);
         
         if (lockAge < 5000) {
-          console.log('🔒 Shape is locked by another user:', shapeData.lockedBy);
           return false; // Lock acquisition failed
         }
       }
@@ -336,7 +335,6 @@ export class CanvasService {
       const shapeDoc = await getDoc(shapeDocRef);
       if (!shapeDoc.exists()) {
         // Shape doesn't exist (probably deleted), so no need to unlock
-        console.log(`Shape ${shapeId} no longer exists, skipping unlock`);
         return;
       }
       
@@ -387,7 +385,6 @@ export class CanvasService {
         const editingAge = now - (shapeData.editingAt?.toMillis() || 0);
         
         if (editingAge < 30000) { // 30 seconds timeout
-          console.log('❌ Text is being edited by another user:', shapeData.editingBy);
           return false; // Editing acquisition failed
         }
       }
@@ -399,7 +396,6 @@ export class CanvasService {
         updatedAt: serverTimestamp() as Timestamp,
       });
 
-      console.log('✏️ Started editing text:', shapeId);
       return true;
     } catch (error) {
       console.error('❌ Error starting text editing:', error);
@@ -418,7 +414,6 @@ export class CanvasService {
         editingAt: null,
         updatedAt: serverTimestamp() as Timestamp,
       });
-      console.log('✏️ Stopped editing text:', shapeId);
     } catch (error) {
       console.error('❌ Error stopping text editing:', error);
       throw error;
@@ -835,7 +830,6 @@ export class CanvasService {
         height: newHeight,
         updatedAt: serverTimestamp()
       });
-      console.log('✅ Text updated:', shapeId, 'Dimensions:', newWidth, 'x', newHeight);
     } catch (error) {
       console.error('❌ Error updating text:', error);
       throw new Error(`Failed to update text: ${error instanceof Error ? error.message : 'Unknown error'}`);

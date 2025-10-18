@@ -44,19 +44,20 @@ export function LeftToolbar() {
     selectedColor, 
     setSelectedColor,
     selectedShapes,
-    shapes,
     selectedTextFormatting,
     applyBoldFormatting,
     applyItalicFormatting,
     applyUnderlineFormatting,
     applyFontSizeFormatting,
-    clearCanvas
+    clearCanvas,
+    editingTextId
   } = useCanvas();
 
   const { user } = useAuth();
   const { showToast } = useToast();
 
   const colors = [
+    { name: 'Blue', value: '#3b82f6' },
     { name: 'Green', value: '#10b981' },
     { name: 'Orange', value: '#f97316' },
     { name: 'Purple', value: '#8b5cf6' },
@@ -88,10 +89,12 @@ export function LeftToolbar() {
 
   const fontSizes = [12, 16, 20, 24, 32, 40, 48];
 
-  // Check if a text shape is selected
-  const selectedTextShape = selectedShapes.length === 1 
-    ? shapes.find(shape => shape.id === selectedShapes[0] && shape.type === 'text')
-    : null;
+  // Show text formatting toolbar when text is being edited or when text tool is active
+  const shouldShowTextFormatting = Boolean(editingTextId) || activeTool === 'text';
+  
+  // Enable formatting buttons when text is being edited, disable when text tool is active but no text is being edited
+  const isTextBeingEdited = Boolean(editingTextId);
+  const shouldDisableFormatting = !isTextBeingEdited && shouldShowTextFormatting;
 
   // Handle delete action
   const handleDelete = async () => {
@@ -140,6 +143,18 @@ export function LeftToolbar() {
         showToast('Failed to clear canvas', 'error');
       }
     }
+  };
+
+  // Handle disabled formatting button clicks
+  const handleDisabledFormattingClick = () => {
+    showToast('Double-click on text input field to use formatting', 'info');
+  };
+
+  // Handle formatting button clicks to prevent focus loss
+  const handleFormattingClick = (formattingFunction: () => void) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    formattingFunction();
   };
 
   return (
@@ -237,40 +252,45 @@ export function LeftToolbar() {
 
         <div className="toolbar-divider"></div>
 
-        {/* Section 4: Text Formatting (only visible when text selected) */}
-        {selectedTextShape && (
+        {/* Section 4: Text Formatting (only visible when text selected or editing) */}
+        {shouldShowTextFormatting && (
           <>
             <div className="toolbar-section">
               <div className="text-formatting">
                 <button
                   type="button"
-                  className={`toolbar-icon-button ${selectedTextFormatting.fontWeight === 'bold' ? 'active' : ''}`}
-                  onClick={applyBoldFormatting}
-                  title="Bold (Cmd+B)"
+                  className={`toolbar-icon-button ${selectedTextFormatting.fontWeight === 'bold' ? 'active' : ''} ${shouldDisableFormatting ? 'disabled' : ''}`}
+                  onClick={shouldDisableFormatting ? handleDisabledFormattingClick : handleFormattingClick(applyBoldFormatting)}
+                  disabled={shouldDisableFormatting}
+                  title={shouldDisableFormatting ? "Double-click on text to enable formatting" : "Bold (Cmd+B)"}
                 >
                   <strong>B</strong>
                 </button>
                 <button
                   type="button"
-                  className={`toolbar-icon-button ${selectedTextFormatting.fontStyle === 'italic' ? 'active' : ''}`}
-                  onClick={applyItalicFormatting}
-                  title="Italic (Cmd+I)"
+                  className={`toolbar-icon-button ${selectedTextFormatting.fontStyle === 'italic' ? 'active' : ''} ${shouldDisableFormatting ? 'disabled' : ''}`}
+                  onClick={shouldDisableFormatting ? handleDisabledFormattingClick : handleFormattingClick(applyItalicFormatting)}
+                  disabled={shouldDisableFormatting}
+                  title={shouldDisableFormatting ? "Double-click on text to enable formatting" : "Italic (Cmd+I)"}
                 >
                   <em>I</em>
                 </button>
                 <button
                   type="button"
-                  className={`toolbar-icon-button ${selectedTextFormatting.textDecoration === 'underline' ? 'active' : ''}`}
-                  onClick={applyUnderlineFormatting}
-                  title="Underline (Cmd+U)"
+                  className={`toolbar-icon-button ${selectedTextFormatting.textDecoration === 'underline' ? 'active' : ''} ${shouldDisableFormatting ? 'disabled' : ''}`}
+                  onClick={shouldDisableFormatting ? handleDisabledFormattingClick : handleFormattingClick(applyUnderlineFormatting)}
+                  disabled={shouldDisableFormatting}
+                  title={shouldDisableFormatting ? "Double-click on text to enable formatting" : "Underline (Cmd+U)"}
                 >
                   <u>U</u>
                 </button>
                 <select
                   value={selectedTextFormatting.fontSize}
-                  onChange={(e) => applyFontSizeFormatting(parseInt(e.target.value))}
-                  className="font-size-select"
-                  title="Font Size"
+                  onChange={(e) => shouldDisableFormatting ? undefined : applyFontSizeFormatting(parseInt(e.target.value))}
+                  onClick={shouldDisableFormatting ? handleDisabledFormattingClick : (e) => e.stopPropagation()}
+                  disabled={shouldDisableFormatting}
+                  className={`font-size-select ${shouldDisableFormatting ? 'disabled' : ''}`}
+                  title={shouldDisableFormatting ? "Double-click on text to enable formatting" : "Font Size"}
                 >
                   {fontSizes.map(size => (
                     <option key={size} value={size}>

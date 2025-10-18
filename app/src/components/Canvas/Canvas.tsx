@@ -762,7 +762,6 @@ useEffect(() => {
       if (clampedPosition.x !== centerX || clampedPosition.y !== centerY) {
         node.x(clampedPosition.x);
         node.y(clampedPosition.y);
-        console.log('🔒 Circle position clamped to canvas bounds');
       }
       
       finalPosition = {
@@ -790,7 +789,6 @@ useEffect(() => {
       if (validatedPosition.wasClamped) {
         node.x(finalCenterX);
         node.y(finalCenterY);
-        console.log('🔒 Shape position clamped to canvas bounds');
       }
       
       finalPosition = {
@@ -1224,8 +1222,32 @@ useEffect(() => {
         
         // For circles, the center should remain fixed during resize
         // No position update needed since the center stays the same
+      } else if (resizingShape.type === 'text') {
+        // For text shapes, resize by changing font size instead of container size
+        const originalFontSize = resizingShape.fontSize || 16;
+        const originalWidth = resizeStart?.width || resizingShape.width;
+        const originalHeight = resizeStart?.height || resizingShape.height;
+        
+        // Calculate scale factor based on the resize
+        const widthScale = previewDimensions.width / originalWidth;
+        const heightScale = previewDimensions.height / originalHeight;
+        const scale = Math.max(widthScale, heightScale); // Use the larger scale to ensure text fits
+        
+        // Calculate new font size (minimum 8px, maximum 200px for practical use)
+        const newFontSize = Math.max(8, Math.min(200, Math.round(originalFontSize * scale)));
+        
+        // Update font size and let the service calculate new dimensions
+        await canvasService.updateTextFontSize(activeHandle.shapeId, newFontSize);
+        
+        // Also update position if it changed (for top/left edge resizes)
+        if (resizeStart && (previewDimensions.x !== resizeStart.shapeX || previewDimensions.y !== resizeStart.shapeY)) {
+          await updateShape(activeHandle.shapeId, {
+            x: previewDimensions.x,
+            y: previewDimensions.y
+          });
+        }
       } else {
-        // For rectangles, use resizeShape method
+        // For rectangles and triangles, use resizeShape method
         await canvasService.resizeShape(
           activeHandle.shapeId,
           previewDimensions.width,
@@ -1458,7 +1480,6 @@ useEffect(() => {
       
       // Deselect all shapes if any - clear selection immediately for better UX
       if (selectedShapes.length > 0) {
-        console.log('Background click - deselecting all shapes');
         // Hide selectors immediately by adding to hidden set
         selectedShapes.forEach(shapeId => {
           setHiddenSelectors(prev => new Set(prev).add(shapeId));
@@ -2019,7 +2040,6 @@ useEffect(() => {
   const handleContainerClick = useCallback((e: React.MouseEvent) => {
     // Only deselect if we have selected shapes and we're clicking on the container itself
     if (selectedShapes.length > 0 && e.target === e.currentTarget) {
-      console.log('Container click - deselecting all shapes');
       // Hide selectors immediately by adding to hidden set
       selectedShapes.forEach(shapeId => {
         setHiddenSelectors(prev => new Set(prev).add(shapeId));
@@ -2075,8 +2095,11 @@ useEffect(() => {
           onMouseUp={handleMouseUp}
           onClick={(e) => {
             // Fallback deselection - if we clicked on the stage itself, deselect
-            if (e.target === e.target.getStage() && selectedShapes.length > 0) {
-              console.log('Stage click - deselecting all shapes');
+            // But don't clear selection if we clicked on a text shape (to allow double-click editing)
+            const clickedShape = e.target.getParent?.()?.getParent?.();
+            const isTextShape = clickedShape?.getAttr?.('type') === 'text';
+            
+            if (e.target === e.target.getStage() && selectedShapes.length > 0 && !isTextShape) {
               selectedShapes.forEach(shapeId => {
                 setHiddenSelectors(prev => new Set(prev).add(shapeId));
               });
@@ -2283,11 +2306,9 @@ useEffect(() => {
                           onDblClick={async (e) => {
                             e.cancelBubble = true; // Prevent canvas deselection
                             
-                            console.log('🖱️ Double-clicked text shape:', shape.id, 'Text:', shape.text);
                             
                           // Check if text is being edited by another user
                           if (shape.editingBy && shape.editingBy !== user?.uid) {
-                            console.log('❌ Text is being edited by another user:', shape.editingBy);
                             // Show toast notification with editor's name
                             try {
                               const editorName = await canvasService.getUserDisplayName(shape.editingBy);
@@ -2300,7 +2321,6 @@ useEffect(() => {
                             
                             // Check lock system
                             if (shape.lockedBy && shape.lockedBy !== user?.uid) {
-                              console.log('❌ Text locked by another user');
                               // Show toast notification with locker's name
                               try {
                                 const lockerName = await canvasService.getUserDisplayName(shape.lockedBy);
@@ -2312,7 +2332,6 @@ useEffect(() => {
                             }
                             
                             // Enter edit mode
-                            console.log('✅ Entering edit mode for text:', shape.text);
                             enterTextEdit(shape.id, shape.text || 'TEXT');
                           }}
                         />
@@ -2334,7 +2353,7 @@ useEffect(() => {
                     )}
                     
                     {/* Resize handles - inside the rotated group so they rotate with the shape */}
-                    {(effectiveLockStatus === 'locked-by-me' || selectedShapes.includes(shape.id)) && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && shape.type !== 'text' && (() => {
+                    {(effectiveLockStatus === 'locked-by-me' || selectedShapes.includes(shape.id)) && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
@@ -2350,6 +2369,16 @@ useEffect(() => {
                         { x: -displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
                         { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
                         { x: -offset, y: displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
+                      ] : shape.type === 'text' ? [
+                        // For text shapes, show all 8 handles like rectangles (positioned relative to center)
+                        { x: -displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
+                        { x: -offset, y: -displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-t` },
+                        { x: displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-tr` },
+                        { x: -displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-l` },
+                        { x: displayWidth / 2 - offset, y: -offset, cursor: 'ew-resize', type: 'edge' as const, name: `${shape.id}-r` },
+                        { x: -displayWidth / 2 - offset, y: displayHeight / 2 - offset, cursor: 'nesw-resize', type: 'corner' as const, name: `${shape.id}-bl` },
+                        { x: -offset, y: displayHeight / 2 - offset, cursor: 'ns-resize', type: 'edge' as const, name: `${shape.id}-b` },
+                        { x: displayWidth / 2 - offset, y: displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-br` },
                       ] : [
                         // For rectangles and triangles, show all 8 handles (positioned relative to center)
                         { x: -displayWidth / 2 - offset, y: -displayHeight / 2 - offset, cursor: 'nwse-resize', type: 'corner' as const, name: `${shape.id}-tl` },
@@ -2584,6 +2613,39 @@ useEffect(() => {
                       );
                     })()}
                     
+                    {resizingShape.type === 'text' && (() => {
+                      // Calculate preview font size based on resize
+                      const originalFontSize = resizingShape.fontSize || 16;
+                      const originalWidth = resizeStart?.width || resizingShape.width;
+                      const originalHeight = resizeStart?.height || resizingShape.height;
+                      
+                      const widthScale = previewDimensions.width / originalWidth;
+                      const heightScale = previewDimensions.height / originalHeight;
+                      const scale = Math.max(widthScale, heightScale);
+                      
+                      const previewFontSize = Math.max(8, Math.min(200, Math.round(originalFontSize * scale)));
+                      
+                      return (
+                        <Text
+                          text={resizingShape.text || 'TEXT'}
+                          x={-previewDimensions.width / 2}
+                          y={-previewDimensions.height / 2}
+                          width={previewDimensions.width}
+                          height={previewDimensions.height}
+                          fontSize={previewFontSize}
+                          fontFamily="Arial"
+                          fontStyle={resizingShape.fontStyle || 'normal'}
+                          fontWeight={resizingShape.fontWeight || 'normal'}
+                          textDecoration={resizingShape.textDecoration || 'none'}
+                          fill={resizingShape.color}
+                          opacity={0.6}
+                          align="center"
+                          verticalAlign="middle"
+                          listening={false}
+                        />
+                      );
+                    })()}
+                    
                     {/* Preview handles - positioned relative to rotated shape */}
                     {(() => {
                       // Define resize handles using local coordinates (relative to shape center)
@@ -2593,6 +2655,16 @@ useEffect(() => {
                         { x: -previewDimensions.width / 2 - offset, y: -offset },
                         { x: previewDimensions.width / 2 - offset, y: -offset },
                         { x: -offset, y: previewDimensions.height / 2 - offset },
+                      ] : resizingShape.type === 'text' ? [
+                        // For text shapes, show all 8 handles like rectangles (positioned relative to center)
+                        { x: -previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
+                        { x: -offset, y: -previewDimensions.height / 2 - offset },
+                        { x: previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
+                        { x: -previewDimensions.width / 2 - offset, y: -offset },
+                        { x: previewDimensions.width / 2 - offset, y: -offset },
+                        { x: -previewDimensions.width / 2 - offset, y: previewDimensions.height / 2 - offset },
+                        { x: -offset, y: previewDimensions.height / 2 - offset },
+                        { x: previewDimensions.width / 2 - offset, y: previewDimensions.height / 2 - offset },
                       ] : [
                         // For rectangles and triangles, show all 8 handles (positioned relative to center)
                         { x: -previewDimensions.width / 2 - offset, y: -previewDimensions.height / 2 - offset },
@@ -2760,6 +2832,9 @@ useEffect(() => {
               fontSize={editingShape.fontSize || 16}
               fontFamily="Arial"
               color={editingShape.color}
+              fontWeight={editingShape.fontWeight || 'normal'}
+              fontStyle={editingShape.fontStyle || 'normal'}
+              textDecoration={editingShape.textDecoration || 'none'}
               zoom={zoom}
               onTextChange={updateTextValue}
               onSave={saveTextEdit}

@@ -8,6 +8,9 @@ interface TextEditorOverlayProps {
   fontSize: number;
   fontFamily: string;
   color: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  textDecoration?: string;
   zoom: number;
   onTextChange: (text: string) => void;
   onSave: () => void;
@@ -25,6 +28,9 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = ({
   fontSize,
   fontFamily,
   color,
+  fontWeight = 'normal',
+  fontStyle = 'normal',
+  textDecoration = 'none',
   zoom,
   onTextChange,
   onSave,
@@ -140,9 +146,51 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = ({
   // Handle blur to save changes when focus is lost
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     e.stopPropagation();
-    // Save changes when focus is lost (user clicked outside)
-    onSave();
+    // Add a longer delay to allow for formatting button clicks
+    // This prevents immediate save when clicking formatting buttons
+    setTimeout(() => {
+      // Check if the input is still not focused (user actually clicked away)
+      if (document.activeElement !== inputRef.current) {
+        // Double-check that we're not in a formatting button click
+        const activeElement = document.activeElement;
+        const isFormattingButton = activeElement?.closest('.text-formatting') || 
+                                  activeElement?.closest('.toolbar-icon-button') ||
+                                  activeElement?.closest('.font-size-select');
+        
+        if (!isFormattingButton) {
+          onSave();
+        }
+      }
+    }, 100); // Reduced delay for better responsiveness
   };
+
+  // Add global click listener to handle clicks outside the input
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      // Check if the click is outside the input element
+      if (inputRef.current && !inputRef.current.contains(e.target as Node)) {
+        // Check if it's not a formatting button click
+        const target = e.target as Element;
+        const isFormattingButton = target?.closest('.text-formatting') || 
+                                  target?.closest('.toolbar-icon-button') ||
+                                  target?.closest('.font-size-select');
+        
+        if (!isFormattingButton) {
+          onSave();
+        }
+      }
+    };
+
+    // Add the listener with a small delay to ensure it doesn't interfere with other click handlers
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', handleGlobalClick, true);
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('mousedown', handleGlobalClick, true);
+    };
+  }, [onSave]);
 
   // Stop all event propagation to prevent canvas interactions
   const stopPropagation = (e: React.MouseEvent) => {
@@ -164,6 +212,9 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = ({
     width: inputWidth,
     fontFamily,
     fontSize: fontSize,
+    fontWeight,
+    fontStyle,
+    textDecoration,
     color,
     background: 'transparent',
     border: '2px solid #4A90E2',

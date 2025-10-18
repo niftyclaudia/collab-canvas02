@@ -328,14 +328,12 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
 
         // Validate minimum size (10px)
         if (size < 10) {
-          console.log('Circle too small, ignoring (minimum 10px)');
           setDrawingState(initialDrawingState);
           return;
         }
 
         // Validate circle bounds
         if (!canvasService.validateShapeBounds(x, y, size, size)) {
-          console.log('Circle outside canvas bounds, ignoring');
           setDrawingState(initialDrawingState);
           return;
         }
@@ -354,14 +352,12 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         
         // Validate minimum size (10x10 pixels)
         if (width < 10 || height < 10) {
-          console.log('Triangle too small, ignoring (minimum 10x10)');
           setDrawingState(initialDrawingState);
           return;
         }
 
         // Validate canvas bounds
         if (!canvasService.validateShapeBounds(x, y, width, height)) {
-          console.log('Triangle outside canvas bounds, ignoring');
           setDrawingState(initialDrawingState);
           return;
         }
@@ -381,14 +377,12 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         
         // Validate minimum size (10x10 pixels)
         if (width < 10 || height < 10) {
-          console.log('Rectangle too small, ignoring (minimum 10x10)');
           setDrawingState(initialDrawingState);
           return;
         }
 
         // Validate canvas bounds
         if (!canvasService.validateShapeBounds(x, y, width, height)) {
-          console.log('Rectangle outside canvas bounds, ignoring');
           setDrawingState(initialDrawingState);
           return;
         }
@@ -513,66 +507,102 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     }));
   }, []);
 
-  // Apply formatting to selected text shape
+  // Apply formatting to selected text shape or currently editing text
   const applyBoldFormatting = useCallback(async () => {
-    if (selectedShapes.length === 1) {
+    let targetShapeId: string | null = null;
+    
+    // Check if we're editing text
+    if (editingTextId) {
+      targetShapeId = editingTextId;
+    } else if (selectedShapes.length === 1) {
       const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
       if (selectedShape && selectedShape.type === 'text') {
-        try {
-          await canvasService.toggleTextBold(selectedShape.id);
-          toggleBold(); // Update local state
-        } catch (error) {
-          console.error('Failed to apply bold formatting:', error);
-          showToast('Failed to apply bold formatting', 'error');
-        }
+        targetShapeId = selectedShape.id;
       }
     }
-  }, [selectedShapes, shapes, toggleBold, showToast]);
+    
+    if (targetShapeId) {
+      try {
+        await canvasService.toggleTextBold(targetShapeId);
+        toggleBold(); // Update local state
+      } catch (error) {
+        console.error('Failed to apply bold formatting:', error);
+        showToast('Failed to apply bold formatting', 'error');
+      }
+    }
+  }, [editingTextId, selectedShapes, shapes, toggleBold, showToast]);
 
   const applyItalicFormatting = useCallback(async () => {
-    if (selectedShapes.length === 1) {
+    let targetShapeId: string | null = null;
+    
+    // Check if we're editing text
+    if (editingTextId) {
+      targetShapeId = editingTextId;
+    } else if (selectedShapes.length === 1) {
       const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
       if (selectedShape && selectedShape.type === 'text') {
-        try {
-          await canvasService.toggleTextItalic(selectedShape.id);
-          toggleItalic(); // Update local state
-        } catch (error) {
-          console.error('Failed to apply italic formatting:', error);
-          showToast('Failed to apply italic formatting', 'error');
-        }
+        targetShapeId = selectedShape.id;
       }
     }
-  }, [selectedShapes, shapes, toggleItalic, showToast]);
+    
+    if (targetShapeId) {
+      try {
+        await canvasService.toggleTextItalic(targetShapeId);
+        toggleItalic(); // Update local state
+      } catch (error) {
+        console.error('Failed to apply italic formatting:', error);
+        showToast('Failed to apply italic formatting', 'error');
+      }
+    }
+  }, [editingTextId, selectedShapes, shapes, toggleItalic, showToast]);
 
   const applyUnderlineFormatting = useCallback(async () => {
-    if (selectedShapes.length === 1) {
+    let targetShapeId: string | null = null;
+    
+    // Check if we're editing text
+    if (editingTextId) {
+      targetShapeId = editingTextId;
+    } else if (selectedShapes.length === 1) {
       const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
       if (selectedShape && selectedShape.type === 'text') {
-        try {
-          await canvasService.toggleTextUnderline(selectedShape.id);
-          toggleUnderline(); // Update local state
-        } catch (error) {
-          console.error('Failed to apply underline formatting:', error);
-          showToast('Failed to apply underline formatting', 'error');
-        }
+        targetShapeId = selectedShape.id;
       }
     }
-  }, [selectedShapes, shapes, toggleUnderline, showToast]);
+    
+    if (targetShapeId) {
+      try {
+        await canvasService.toggleTextUnderline(targetShapeId);
+        toggleUnderline(); // Update local state
+      } catch (error) {
+        console.error('Failed to apply underline formatting:', error);
+        showToast('Failed to apply underline formatting', 'error');
+      }
+    }
+  }, [editingTextId, selectedShapes, shapes, toggleUnderline, showToast]);
 
   const applyFontSizeFormatting = useCallback(async (size: number) => {
-    if (selectedShapes.length === 1) {
+    let targetShapeId: string | null = null;
+    
+    // Check if we're editing text
+    if (editingTextId) {
+      targetShapeId = editingTextId;
+    } else if (selectedShapes.length === 1) {
       const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
       if (selectedShape && selectedShape.type === 'text') {
-        try {
-          await canvasService.updateTextFontSize(selectedShape.id, size);
-          setFontSize(size); // Update local state
-        } catch (error) {
-          console.error('Failed to apply font size:', error);
-          showToast('Failed to apply font size', 'error');
-        }
+        targetShapeId = selectedShape.id;
       }
     }
-  }, [selectedShapes, shapes, setFontSize, showToast]);
+    
+    if (targetShapeId) {
+      try {
+        await canvasService.updateTextFontSize(targetShapeId, size);
+        setFontSize(size); // Update local state
+      } catch (error) {
+        console.error('Failed to apply font size:', error);
+        showToast('Failed to apply font size', 'error');
+      }
+    }
+  }, [editingTextId, selectedShapes, shapes, setFontSize, showToast]);
 
   // Locking operations
   const lockShape = useCallback(async (shapeId: string): Promise<boolean> => {
@@ -588,7 +618,6 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       const lockAcquired = await canvasService.lockShape(shapeId, user.uid);
 
       if (lockAcquired) {
-        console.log(`🔒 Item ${shapeId} is locked by ${user.username || user.uid}`);
         setSelectedShapes([shapeId]);
         setLockStatus(prev => ({ ...prev, [shapeId]: 'confirmed' }));
 
@@ -601,7 +630,6 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         const timeout = window.setTimeout(async () => {
           try {
             await canvasService.unlockShape(shapeId);
-            console.log(`🔓 ${shapeId} unlocked (timer)`);
             setLockStatus(prev => ({ ...prev, [shapeId]: 'expired' }));
             setSelectedShapesState(prev => prev.filter(id => id !== shapeId));
             lockTimeoutRef.current.delete(shapeId);
@@ -618,10 +646,8 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         if (shape?.lockedBy) {
           try {
             const ownerName = await canvasService.getUserDisplayName(shape.lockedBy);
-            console.log(`🔒 Item ${shapeId} is locked by ${ownerName}`);
             showToast(`Shape locked by ${ownerName}`, 'error');
           } catch (error) {
-            console.log(`🔒 Item ${shapeId} is locked by another user`);
             showToast('Shape is currently locked by another user', 'error');
           }
         }
@@ -638,7 +664,6 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const unlockShape = useCallback(async (shapeId: string): Promise<void> => {
     try {
       await canvasService.unlockShape(shapeId);
-      console.log(`🔓 ${shapeId} unlocked`);
       setSelectedShapesState(prev => prev.filter(id => id !== shapeId));
       setLockStatus(prev => ({ ...prev, [shapeId]: 'expired' }));
       
@@ -700,9 +725,21 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     }
   }, [selectedShapes, lockStatus, shapes]);
 
-  // Update text formatting when a text shape is selected
+  // Update text formatting when a text shape is selected or being edited
   useEffect(() => {
-    if (selectedShapes.length === 1) {
+    if (editingTextId) {
+      // When editing text, use the editing shape's formatting
+      const editingShape = shapes.find(shape => shape.id === editingTextId);
+      if (editingShape && editingShape.type === 'text') {
+        setSelectedTextFormatting({
+          fontWeight: editingShape.fontWeight || 'normal',
+          fontStyle: editingShape.fontStyle || 'normal',
+          textDecoration: editingShape.textDecoration || 'none',
+          fontSize: editingShape.fontSize || 16,
+        });
+      }
+    } else if (selectedShapes.length === 1) {
+      // When a text shape is selected (but not editing)
       const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
       if (selectedShape && selectedShape.type === 'text') {
         setSelectedTextFormatting({
@@ -721,7 +758,7 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         fontSize: 16,
       });
     }
-  }, [selectedShapes, shapes]);
+  }, [editingTextId, selectedShapes, shapes]);
 
   // Clean up timeouts on unmount
   useEffect(() => {
