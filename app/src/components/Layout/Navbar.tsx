@@ -22,7 +22,10 @@ export function Navbar() {
     <nav className="navbar">
       <div className="navbar-container">
         <div className="navbar-brand">
-          <h1>CollabCanvas</h1>
+          <div className="navbar-logo">
+            <div className="logo-icon">◆</div>
+            <span className="logo-text">COLLABCANVAS</span>
+          </div>
         </div>
 
         <div className="navbar-right">
