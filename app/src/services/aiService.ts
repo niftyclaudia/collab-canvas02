@@ -23,6 +23,7 @@ interface ComplexCommandResult {
 interface AIServiceOptions {
   onError?: (message: string) => void;
   onSuccess?: (message: string) => void;
+  onSelectionUpdate?: (shapeIds: string[]) => void;
 }
 
 export class AIService {
@@ -30,6 +31,20 @@ export class AIService {
   private canvasService: CanvasService;
   private onError?: (message: string) => void;
   private onSuccess?: (message: string) => void;
+  private onSelectionUpdate?: (shapeIds: string[]) => void;
+  private responseCache: Map<string, { result: CommandResult; timestamp: number }> = new Map();
+  private readonly CACHE_TTL = 300000; // 5 minutes
+  private performanceMetrics: {
+    totalRequests: number;
+    averageResponseTime: number;
+    cacheHits: number;
+    lastResponseTime: number;
+  } = {
+    totalRequests: 0,
+    averageResponseTime: 0,
+    cacheHits: 0,
+    lastResponseTime: 0,
+  };
   
   constructor(options?: AIServiceOptions) {
     this.openai = new OpenAI({
@@ -39,10 +54,22 @@ export class AIService {
     this.canvasService = new CanvasService();
     this.onError = options?.onError;
     this.onSuccess = options?.onSuccess;
+    this.onSelectionUpdate = options?.onSelectionUpdate;
   }
   
-  async executeCommand(prompt: string, userId: string): Promise<CommandResult> {
+  async executeCommand(prompt: string, userId: string, selectedShapes?: string[]): Promise<CommandResult> {
+    const startTime = Date.now();
+    
     try {
+      // Check cache first for identical prompts
+      const cacheKey = `${prompt.toLowerCase().trim()}_${userId}`;
+      const cached = this.responseCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
+        this.performanceMetrics.cacheHits++;
+        this.updatePerformanceMetrics(startTime);
+        return cached.result;
+      }
+
       // Check for random shapes requests and handle them specially
       const isRandomShapesRequest = prompt.toLowerCase().includes('random shapes');
       const shapeCountMatch = prompt.match(/(\d+)\s+random\s+shapes/);
@@ -60,39 +87,50 @@ export class AIService {
         
         const successMessage = `✓ Created ${totalCount} random shapes (${countPerType} rectangles, ${countPerType} circles, ${countPerType} triangles)`;
         
-        if (this.onSuccess) {
-          this.onSuccess(successMessage);
-        }
-        
-        return {
+        const result = {
           success: true,
           message: successMessage,
           toolCalls: results
         };
+
+        // Cache the result
+        this.responseCache.set(cacheKey, { result, timestamp: Date.now() });
+        
+        if (this.onSuccess) {
+          this.onSuccess(successMessage);
+        }
+        
+        this.updatePerformanceMetrics(startTime);
+        return result;
       }
       
-      // 1. Get current canvas state for context
-      const shapes = await this.canvasService.getShapes();
-      const groups = await this.canvasService.getGroups();
+      // 1. Get current canvas state for context (optimized)
+      const [shapes, groups] = await Promise.all([
+        this.canvasService.getShapes(),
+        this.canvasService.getGroups()
+      ]);
       
-      // 2. Call OpenAI with function tools
+      // 2. Call OpenAI with function tools (optimized prompt)
+      const systemPrompt = getSystemPrompt(shapes, groups, selectedShapes);
+      const optimizedPrompt = this.optimizePrompt(prompt);
+      
       const response = await this.openai.chat.completions.create({
         model: "gpt-4-turbo-preview",
         messages: [
-          { role: "system", content: getSystemPrompt(shapes, groups) },
-          { role: "user", content: prompt }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: optimizedPrompt }
         ],
         tools: this.getToolDefinitions(),
         tool_choice: "required", // Force the AI to use tools
         temperature: 0.1,
-        max_tokens: 2000
+        max_tokens: 1500 // Reduced for faster response
       });
       
       const message = response.choices[0].message;
       
       // 3. Execute tool calls
       if (message.tool_calls && message.tool_calls.length > 0) {
-        const results = await this.executeToolCalls(message.tool_calls, userId);
+        const results = await this.executeToolCalls(message.tool_calls, userId, selectedShapes);
         
         // Check if only getCanvasState was called (indicates shape not found)
         const onlyGetCanvasState = results.length === 1 && results[0].tool === 'getCanvasState';
@@ -126,11 +164,16 @@ export class AIService {
           this.onSuccess(successMessage);
         }
         
-        return {
+        const result = {
           success: true,
           message: successMessage,
           toolCalls: results
         };
+
+        // Cache the result
+        this.responseCache.set(cacheKey, { result, timestamp: Date.now() });
+        this.updatePerformanceMetrics(startTime);
+        return result;
       } else {
         const notUnderstoodMessage = message.content || "I couldn't understand that command.";
         
@@ -139,11 +182,13 @@ export class AIService {
           this.onError(`⚠️ ${notUnderstoodMessage}`);
         }
         
-        return {
+        const result = {
           success: false,
           message: notUnderstoodMessage,
           toolCalls: []
         };
+        this.updatePerformanceMetrics(startTime);
+        return result;
       }
     } catch (error: any) {
       console.error('AI execution error:', error);
@@ -163,6 +208,7 @@ export class AIService {
         this.onError(errorMessage);
       }
       
+      this.updatePerformanceMetrics(startTime);
       return {
         success: false,
         message: "⚠️ AI service error. Please try again.",
@@ -172,12 +218,69 @@ export class AIService {
   }
 
   /**
+   * Update performance metrics
+   */
+  private updatePerformanceMetrics(startTime: number): void {
+    const responseTime = Date.now() - startTime;
+    this.performanceMetrics.totalRequests++;
+    this.performanceMetrics.lastResponseTime = responseTime;
+    
+    // Calculate rolling average
+    this.performanceMetrics.averageResponseTime = 
+      (this.performanceMetrics.averageResponseTime * (this.performanceMetrics.totalRequests - 1) + responseTime) / 
+      this.performanceMetrics.totalRequests;
+  }
+
+  /**
+   * Optimize prompt for faster AI processing
+   */
+  private optimizePrompt(prompt: string): string {
+    // Remove unnecessary words and optimize for AI processing
+    return prompt
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim()
+      .toLowerCase()
+      .replace(/please\s+/g, '') // Remove polite words
+      .replace(/can you\s+/g, '') // Remove question words
+      .replace(/\?/g, '') // Remove question marks
+      .trim();
+  }
+
+  /**
+   * Get performance metrics for monitoring
+   */
+  getPerformanceMetrics(): {
+    totalRequests: number;
+    averageResponseTime: number;
+    cacheHits: number;
+    cacheHitRate: number;
+    lastResponseTime: number;
+  } {
+    return {
+      totalRequests: this.performanceMetrics.totalRequests,
+      averageResponseTime: this.performanceMetrics.averageResponseTime,
+      cacheHits: this.performanceMetrics.cacheHits,
+      cacheHitRate: this.performanceMetrics.totalRequests > 0 
+        ? (this.performanceMetrics.cacheHits / this.performanceMetrics.totalRequests) * 100 
+        : 0,
+      lastResponseTime: this.performanceMetrics.lastResponseTime,
+    };
+  }
+
+  /**
+   * Clear response cache
+   */
+  clearCache(): void {
+    this.responseCache.clear();
+  }
+
+  /**
    * Send a message through the AI chat interface
    * @param content The message content from the user
    * @param userId The user ID
    * @returns Promise<ChatMessage> The AI response message
    */
-  async sendMessage(content: string, userId: string): Promise<ChatMessage> {
+  async sendMessage(content: string, userId: string, selectedShapes?: string[]): Promise<ChatMessage> {
     try {
       // Create user message
       // const userMessage: ChatMessage = {
@@ -189,7 +292,7 @@ export class AIService {
       // };
 
       // Execute the AI command
-      const result = await this.executeCommand(content, userId);
+      const result = await this.executeCommand(content, userId, selectedShapes);
 
       // Create AI response message
       const aiMessage: ChatMessage = {
@@ -219,7 +322,7 @@ export class AIService {
    * Generate a unique message ID
    */
   private generateMessageId(): string {
-    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${performance.now()}`;
   }
 
   /**
@@ -634,7 +737,7 @@ export class AIService {
     }
   }
   
-  private async executeToolCalls(toolCalls: any[], userId: string): Promise<any[]> {
+  private async executeToolCalls(toolCalls: any[], userId: string, selectedShapes?: string[]): Promise<any[]> {
     // Check if we have multiple shape creation calls that can be batched
     const createShapeCalls = toolCalls.filter(call => 
       ['createRectangle', 'createCircle', 'createTriangle'].includes(call.function.name)
@@ -642,13 +745,13 @@ export class AIService {
     
     if (createShapeCalls.length > 1) {
       // Use batch creation for multiple shapes
-      return await this.executeBatchShapeCreation(createShapeCalls, toolCalls, userId);
+      return await this.executeBatchShapeCreation(createShapeCalls, toolCalls, userId, selectedShapes);
     }
     
     // Execute tool calls in parallel for better performance
     const promises = toolCalls.map(async (call) => {
       try {
-        const result = await this.executeSingleTool(call, userId);
+        const result = await this.executeSingleTool(call, userId, selectedShapes);
         return {
           tool: call.function.name,
           success: true,
@@ -686,7 +789,7 @@ export class AIService {
     return results;
   }
   
-  private async executeBatchShapeCreation(createShapeCalls: any[], allToolCalls: any[], userId: string): Promise<any[]> {
+  private async executeBatchShapeCreation(createShapeCalls: any[], allToolCalls: any[], userId: string, selectedShapes?: string[]): Promise<any[]> {
     try {
       // Convert tool calls to shape data
       const shapesData = createShapeCalls.map(call => {
@@ -742,7 +845,7 @@ export class AIService {
       const otherResults = otherCalls.length > 0 
         ? await Promise.all(otherCalls.map(async (call) => {
             try {
-              const result = await this.executeSingleTool(call, userId);
+              const result = await this.executeSingleTool(call, userId, selectedShapes);
               return {
                 tool: call.function.name,
                 success: true,
@@ -769,16 +872,28 @@ export class AIService {
     } catch (error: any) {
       // If batch fails, fall back to individual creation
       console.warn('Batch creation failed, falling back to individual creation:', error);
-      return await this.executeToolCalls(allToolCalls, userId);
+      return await this.executeToolCalls(allToolCalls, userId, selectedShapes);
     }
   }
   
   private async createMultipleShapes(args: any, userId: string) {
-    const { count, shapeType, startX, startY, gridColumns, spacing, shapeWidth, shapeHeight, colors } = args;
+    const { 
+      count, 
+      shapeType, 
+      startX, 
+      startY, 
+      gridColumns, 
+      spacing, 
+      shapeWidth, 
+      shapeHeight, 
+      colors,
+      layout = 'grid',
+      alignment = 'default'
+    } = args;
     
-    console.log(`🤖 AI creating ${count} ${shapeType} shapes at (${startX}, ${startY}) with ${colors.length} colors`);
+    console.log(`🤖 AI creating ${count} ${shapeType} shapes at (${startX}, ${startY}) with ${colors.length} colors, layout: ${layout}, alignment: ${alignment}`);
     
-    // Calculate grid positions with proper spacing to prevent overlap
+    // Calculate positions based on layout type
     const shapesData = [];
     const canvasWidth = 5000;
     const canvasHeight = 5000;
@@ -787,17 +902,62 @@ export class AIService {
     const cellWidth = shapeWidth + spacing;
     const cellHeight = shapeHeight + spacing;
     
+    // Determine effective grid columns based on layout
+    let effectiveGridColumns = gridColumns;
+    if (layout === 'horizontal-row') {
+      effectiveGridColumns = count; // All shapes in one row
+    } else if (layout === 'vertical-row') {
+      effectiveGridColumns = 1; // All shapes in one column
+    }
+    
     for (let i = 0; i < count; i++) {
-      const row = Math.floor(i / gridColumns);
-      const col = i % gridColumns;
+      const row = Math.floor(i / effectiveGridColumns);
+      const col = i % effectiveGridColumns;
       
-      // Use cell-based positioning to ensure proper spacing
-      const x = startX + (col * cellWidth);
-      const y = startY + (row * cellHeight);
+      let x, y;
+      
+      if (layout === 'horizontal-row') {
+        // All shapes in a single horizontal row
+        x = startX + (i * (shapeWidth + spacing));
+        // Middle-align vertically
+        if (alignment === 'middle' || alignment === 'both') {
+          y = startY - shapeHeight / 2; // Center the shapes vertically
+        } else {
+          y = startY;
+        }
+      } else if (layout === 'vertical-row') {
+        // All shapes in a single vertical column
+        if (alignment === 'center' || alignment === 'both') {
+          x = startX - shapeWidth / 2; // Center the shapes horizontally
+        } else {
+          x = startX;
+        }
+        y = startY + (i * (shapeHeight + spacing));
+      } else {
+        // Grid layout (default behavior)
+        x = startX + (col * cellWidth);
+        y = startY + (row * cellHeight);
+        
+        // Apply alignment for grid layout
+        if (alignment === 'middle' || alignment === 'both') {
+          // Calculate middle Y position for the entire grid
+          const totalRows = Math.ceil(count / effectiveGridColumns);
+          const gridHeight = (totalRows - 1) * cellHeight + shapeHeight;
+          const middleY = startY + gridHeight / 2;
+          y = middleY - shapeHeight / 2;
+        }
+        if (alignment === 'center' || alignment === 'both') {
+          // Calculate center X position for the entire grid
+          const totalCols = Math.min(effectiveGridColumns, count);
+          const gridWidth = (totalCols - 1) * cellWidth + shapeWidth;
+          const centerX = startX + gridWidth / 2;
+          x = centerX - shapeWidth / 2 + (col * cellWidth);
+        }
+      }
       
       // Debug first few shapes to see positioning
       if (i < 5) {
-        console.log(`🔍 Shape ${i}: row=${row}, col=${col}, x=${x}, y=${y}, cellWidth=${cellWidth}, cellHeight=${cellHeight}`);
+        console.log(`🔍 Shape ${i}: layout=${layout}, alignment=${alignment}, x=${x}, y=${y}, row=${row}, col=${col}`);
       }
       
       // Check bounds to ensure shapes stay within canvas
@@ -924,7 +1084,7 @@ export class AIService {
     return results;
   }
   
-  private async executeSingleTool(call: any, userId: string) {
+  private async executeSingleTool(call: any, userId: string, selectedShapes?: string[]) {
     const { name, arguments: argsStr } = call.function;
     logger.debug(LogCategory.AI, `Parsing tool call: ${name} with args: ${argsStr}`);
     const args = JSON.parse(argsStr);
@@ -1029,13 +1189,59 @@ export class AIService {
       case 'duplicateShape':
         return await this.canvasService.duplicateShape(args.shapeId, userId);
         
+      case 'duplicateMultipleShapes':
+        console.log(`📋 [AI] duplicateMultipleShapes called with ${args.shapeIds.length} shapes:`, args.shapeIds);
+        return await this.duplicateMultipleShapes(args.shapeIds, userId);
+        
+      case 'duplicateSelectedShapes':
+        // Use the selectedShapes from the context instead of requiring shapeIds
+        if (!selectedShapes || selectedShapes.length === 0) {
+          throw new Error('No shapes are currently selected');
+        }
+        console.log(`📋 [AI] duplicateSelectedShapes called with ${selectedShapes.length} selected shapes:`, selectedShapes);
+        return await this.duplicateMultipleShapes(selectedShapes, userId);
+        
       case 'deleteShape':
         return await this.canvasService.deleteShape(args.shapeId);
+        
+      case 'deleteMultipleShapes':
+        console.log(`🗑️ [AI] deleteMultipleShapes called with ${args.shapeIds.length} shapes:`, args.shapeIds);
+        return await this.deleteMultipleShapes(args.shapeIds);
+        
+      case 'deleteSelectedShapes':
+        // Use the selectedShapes from the context instead of requiring shapeIds
+        if (!selectedShapes || selectedShapes.length === 0) {
+          throw new Error('No shapes are currently selected');
+        }
+        console.log(`🗑️ [AI] deleteSelectedShapes called with ${selectedShapes.length} selected shapes:`, selectedShapes);
+        return await this.deleteMultipleShapes(selectedShapes);
+        
+      case 'changeColor':
+        return await this.canvasService.updateShape(args.shapeId, {
+          color: args.color
+        });
+        
+      case 'changeMultipleColors':
+        console.log(`🎨 [AI] changeMultipleColors called with ${args.shapeIds.length} shapes:`, args.shapeIds);
+        return await this.changeMultipleColors(args.shapeIds, args.color);
+        
+      case 'changeSelectedShapesColor':
+        // Use the selectedShapes from the context instead of requiring shapeIds
+        if (!selectedShapes || selectedShapes.length === 0) {
+          throw new Error('No shapes are currently selected');
+        }
+        console.log(`🎨 [AI] changeSelectedShapesColor called with ${selectedShapes.length} selected shapes:`, selectedShapes);
+        return await this.changeMultipleColors(selectedShapes, args.color);
         
       case 'getCanvasState':
         const canvasShapes = await this.canvasService.getShapes();
         const canvasGroups = await this.canvasService.getGroups();
         return { shapes: canvasShapes, groups: canvasGroups };
+        
+      case 'getSelectedShapes':
+        // This would need to be passed from the Canvas component
+        // For now, return empty array - this needs to be implemented
+        return { selectedShapes: [] };
         
       // NEW LAYOUT TOOLS
       case 'groupShapes':
@@ -1157,10 +1363,123 @@ export class AIService {
     }
   }
   
+  /**
+   * Change color of multiple shapes at once
+   * @param shapeIds - Array of shape IDs to change color
+   * @param color - New color to apply
+   */
+  private async changeMultipleColors(shapeIds: string[], color: string): Promise<void> {
+    try {
+      console.log(`🎨 Changing colors for ${shapeIds.length} shapes:`, shapeIds);
+      
+      // Update each shape's color individually with error handling
+      const updatePromises = shapeIds.map(async (shapeId, index) => {
+        try {
+          console.log(`🎨 Updating shape ${index + 1}/${shapeIds.length}: ${shapeId} to ${color}`);
+          await this.canvasService.updateShape(shapeId, { color });
+          console.log(`✅ Successfully updated shape: ${shapeId}`);
+        } catch (shapeError) {
+          console.error(`❌ Failed to update shape ${shapeId}:`, shapeError);
+          throw shapeError;
+        }
+      });
+      
+      await Promise.all(updatePromises);
+      console.log(`🎨 Successfully changed colors for all ${shapeIds.length} shapes`);
+    } catch (error) {
+      console.error('❌ Error changing multiple colors:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Delete multiple shapes at once
+   * @param shapeIds - Array of shape IDs to delete
+   */
+  private async deleteMultipleShapes(shapeIds: string[]): Promise<void> {
+    try {
+      console.log(`🗑️ Deleting ${shapeIds.length} shapes:`, shapeIds);
+      
+      // Delete each shape individually with error handling
+      const deletePromises = shapeIds.map(async (shapeId, index) => {
+        try {
+          console.log(`🗑️ Deleting shape ${index + 1}/${shapeIds.length}: ${shapeId}`);
+          await this.canvasService.deleteShape(shapeId);
+          console.log(`✅ Successfully deleted shape: ${shapeId}`);
+        } catch (shapeError) {
+          console.error(`❌ Failed to delete shape ${shapeId}:`, shapeError);
+          throw shapeError;
+        }
+      });
+      
+      await Promise.all(deletePromises);
+      console.log(`🗑️ Successfully deleted all ${shapeIds.length} shapes`);
+    } catch (error) {
+      console.error('❌ Error deleting multiple shapes:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Duplicate multiple shapes at once
+   * @param shapeIds - Array of shape IDs to duplicate
+   * @param userId - User ID for the duplication
+   */
+  private async duplicateMultipleShapes(shapeIds: string[], userId: string): Promise<void> {
+    try {
+      console.log(`📋 Duplicating ${shapeIds.length} shapes:`, shapeIds);
+      
+      // Get the original shapes to find their positions for selection
+      const originalShapes = await this.canvasService.getShapes();
+      
+      // Duplicate each shape individually with error handling
+      const duplicatePromises = shapeIds.map(async (shapeId, index) => {
+        try {
+          console.log(`📋 Duplicating shape ${index + 1}/${shapeIds.length}: ${shapeId}`);
+          await this.canvasService.duplicateShape(shapeId, userId);
+          console.log(`✅ Successfully duplicated shape: ${shapeId}`);
+        } catch (shapeError) {
+          console.error(`❌ Failed to duplicate shape ${shapeId}:`, shapeError);
+          throw shapeError;
+        }
+      });
+      
+      await Promise.all(duplicatePromises);
+      console.log(`📋 Successfully duplicated all ${shapeIds.length} shapes`);
+      
+      // After duplication, get the new shapes and select them
+      // We'll need to find the newly created shapes by comparing with original shapes
+      setTimeout(async () => {
+        try {
+          const newShapes = await this.canvasService.getShapes();
+          const newShapeIds = newShapes
+            .filter(shape => !originalShapes.some(original => original.id === shape.id))
+            .map(shape => shape.id);
+          
+          if (newShapeIds.length > 0) {
+            console.log(`📋 Selecting ${newShapeIds.length} newly duplicated shapes:`, newShapeIds);
+            // Use the callback to update selection in the Canvas component
+            if (this.onSelectionUpdate) {
+              this.onSelectionUpdate(newShapeIds);
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error selecting duplicated shapes:', error);
+        }
+      }, 100); // Small delay to ensure shapes are created
+      
+    } catch (error) {
+      console.error('❌ Error duplicating multiple shapes:', error);
+      throw error;
+    }
+  }
+  
   private isObjectModificationTool(toolName: string): boolean {
     // Check if the tool modifies objects (not just getCanvasState)
     return ['createRectangle', 'createCircle', 'createTriangle', 'createText', 
-            'moveShape', 'resizeShape', 'rotateShape', 'duplicateShape', 'deleteShape',
+            'moveShape', 'resizeShape', 'rotateShape', 'duplicateShape', 'duplicateMultipleShapes', 'duplicateSelectedShapes',
+            'deleteShape', 'deleteMultipleShapes', 'deleteSelectedShapes',
+            'changeColor', 'changeMultipleColors', 'changeSelectedShapesColor',
             'groupShapes', 'ungroupShapes', 'alignShapes', 'arrangeShapesInRow', 'spaceShapesEvenly', 'bringToFront', 'sendToBack'].includes(toolName);
   }
   
@@ -1174,7 +1493,14 @@ export class AIService {
       'resizeShape': 'resize shape',
       'rotateShape': 'rotate shape',
       'duplicateShape': 'duplicate shape',
+      'duplicateMultipleShapes': 'duplicate multiple shapes',
+      'duplicateSelectedShapes': 'duplicate selected shapes',
       'deleteShape': 'delete shape',
+      'deleteMultipleShapes': 'delete multiple shapes',
+      'deleteSelectedShapes': 'delete selected shapes',
+      'changeColor': 'change color',
+      'changeMultipleColors': 'change colors',
+      'changeSelectedShapesColor': 'change selected shapes color',
       'groupShapes': 'group shapes',
       'ungroupShapes': 'ungroup shapes',
       'alignShapes': 'align shapes',
@@ -1278,7 +1604,19 @@ export class AIService {
               spacing: { type: "number", description: "Spacing between shapes in pixels" },
               shapeWidth: { type: "number", description: "Width of each shape" },
               shapeHeight: { type: "number", description: "Height of each shape" },
-              colors: { type: "array", items: { type: "string" }, description: "Array of colors to use (will cycle through)" }
+              colors: { type: "array", items: { type: "string" }, description: "Array of colors to use (will cycle through)" },
+              layout: { 
+                type: "string", 
+                enum: ["grid", "horizontal-row", "vertical-row"], 
+                description: "Layout type: 'grid' (multi-row), 'horizontal-row' (single row), 'vertical-row' (single column)",
+                default: "grid"
+              },
+              alignment: { 
+                type: "string", 
+                enum: ["default", "middle", "center", "both"], 
+                description: "Shape alignment: 'default' (no special alignment), 'middle' (vertical center), 'center' (horizontal center), 'both' (full center alignment)",
+                default: "default"
+              }
             },
             required: ["count", "shapeType", "startX", "startY", "gridColumns", "spacing", "shapeWidth", "shapeHeight", "colors"]
           }
@@ -1445,6 +1783,102 @@ export class AIService {
               shapeId: { type: "string", description: "ID of the shape to delete" }
             },
             required: ["shapeId"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "changeColor",
+          description: "Changes the color of an existing shape. MUST call getCanvasState first to find the shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to change color" },
+              color: { type: "string", description: "New hex color code like #ff0000" }
+            },
+            required: ["shapeId", "color"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "changeMultipleColors",
+          description: "Changes the color of multiple shapes at once. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to change color" },
+              color: { type: "string", description: "New hex color code like #ff0000" }
+            },
+            required: ["shapeIds", "color"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "changeSelectedShapesColor",
+          description: "Changes the color of all currently selected shapes. Use this when user says 'change to [color]' or 'make them [color]' with shapes selected.",
+          parameters: {
+            type: "object",
+            properties: {
+              color: { type: "string", description: "New hex color code like #ff0000" }
+            },
+            required: ["color"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "deleteMultipleShapes",
+          description: "Deletes multiple shapes at once. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to delete" }
+            },
+            required: ["shapeIds"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "deleteSelectedShapes",
+          description: "Deletes all currently selected shapes. Use this when user says 'delete' or 'remove' with shapes selected.",
+          parameters: {
+            type: "object",
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "duplicateMultipleShapes",
+          description: "Duplicates multiple shapes at once. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to duplicate" }
+            },
+            required: ["shapeIds"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "duplicateSelectedShapes",
+          description: "Duplicates all currently selected shapes. Use this when user says 'duplicate' with shapes selected.",
+          parameters: {
+            type: "object",
+            properties: {},
+            required: []
           }
         }
       },

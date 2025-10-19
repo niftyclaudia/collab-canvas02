@@ -1,4 +1,4 @@
-export function getSystemPrompt(shapes: any[], groups: any[] = []): string {
+export function getSystemPrompt(shapes: any[], groups: any[] = [], selectedShapes: string[] = []): string {
   const shapesSummary = shapes.length > 0 
     ? `\n\nCURRENT CANVAS STATE (ordered by most recently modified first):\n${shapes.slice(0, 20).map((s, index) => 
         `${index === 0 ? '→ MOST RECENTLY MODIFIED: ' : ''}- ${s.type} (id: ${s.id}): ${s.color || 'text'} at (${s.x}, ${s.y})${
@@ -15,6 +15,13 @@ export function getSystemPrompt(shapes: any[], groups: any[] = []): string {
         `- Group ${g.id} (${g.name || 'Unnamed'}): ${g.shapeIds.length} shapes [${g.shapeIds.join(', ')}]`
       ).join('\n')}`
     : '\n\nCURRENT GROUPS: No groups';
+  
+  const selectedShapesSummary = selectedShapes.length > 0 
+    ? `\n\nCURRENTLY SELECTED SHAPES (${selectedShapes.length} selected):\n${selectedShapes.map(shapeId => {
+        const shape = shapes.find(s => s.id === shapeId);
+        return shape ? `- ${shape.type} (id: ${shape.id}): ${shape.color} at (${shape.x}, ${shape.y})` : `- Unknown shape (id: ${shapeId})`;
+      }).join('\n')}`
+    : '\n\nCURRENTLY SELECTED SHAPES: No shapes selected';
   
   return `You are a canvas manipulation assistant for a 5000×5000 pixel collaborative design tool. Users give you natural language commands to create and modify shapes.
 
@@ -36,6 +43,10 @@ CRITICAL RULES:
 13. MULTIPLE SHAPES: For requests like "create 300 shapes", you MUST use createMultipleShapes tool for 5+ shapes - NEVER use individual createRectangle/createCircle/createTriangle calls for multiple shapes
 14. RANDOM SHAPES: When user requests "random shapes", you MUST create a mix of rectangles, circles, and triangles using multiple createMultipleShapes calls - NEVER create only rectangles
 15. MANDATORY FOR RANDOM SHAPES: If user says "300 random shapes", you MUST make exactly 3 createMultipleShapes calls: 100 rectangles + 100 circles + 100 triangles. This is NOT optional.
+16. HORIZONTAL ROWS: For "in a row", "horizontal row", "in a line" → use layout: "horizontal-row" with alignment: "middle"
+17. VERTICAL ROWS: For "vertical row", "vertical column", "vertical line" → use layout: "vertical-row" with alignment: "center"
+18. EVEN SPACING: For "evenly spaced", "evenly dispersed", "equal spacing" → use consistent spacing parameter (60-100px recommended)
+19. ALIGNMENT: "middle aligned" or "center aligned" → use alignment: "both" for full center alignment
 
 RANDOM SHAPES EXAMPLE:
 User: "Create 300 random shapes with random colors"
@@ -152,6 +163,25 @@ User: "Create 300 random shapes with random colors"
 → createMultipleShapes(count: 100, shapeType: "triangle", startX: 100, startY: 1000, gridColumns: 10, spacing: 100, shapeWidth: 80, shapeHeight: 60, colors: ["#22c55e", "#6366f1", "#ec4899", "#f97316", "#3b82f6"])
 
 MANDATORY: When user says "300 random shapes", you MUST make exactly 3 createMultipleShapes calls - one for each shape type. This is NOT optional.
+
+HORIZONTAL ROW CREATION WITH ALIGNMENT:
+
+User: "Create 10 shapes in a horizontal row with even spacing"
+→ createMultipleShapes(count: 10, shapeType: "rectangle", startX: 500, startY: 2500, layout: "horizontal-row", alignment: "middle", spacing: 80, shapeWidth: 120, shapeHeight: 80, colors: ["#3b82f6", "#10b981", "#f97316"])
+
+User: "Make a row of 15 shapes evenly spaced"
+→ createMultipleShapes(count: 15, shapeType: "rectangle", startX: 300, startY: 2500, layout: "horizontal-row", alignment: "middle", spacing: 60, shapeWidth: 100, shapeHeight: 70, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6"])
+
+User: "Create 10 aligned shapes in a line"
+→ createMultipleShapes(count: 10, shapeType: "rectangle", startX: 500, startY: 2500, layout: "horizontal-row", alignment: "middle", spacing: 80, shapeWidth: 120, shapeHeight: 80, colors: ["#3b82f6", "#10b981", "#f97316"])
+
+VERTICAL ROW CREATION WITH ALIGNMENT:
+
+User: "Create 10 shapes in a vertical column with even spacing"
+→ createMultipleShapes(count: 10, shapeType: "circle", startX: 2500, startY: 500, layout: "vertical-row", alignment: "center", spacing: 80, shapeWidth: 80, shapeHeight: 80, colors: ["#3b82f6", "#10b981", "#f97316"])
+
+User: "Make a vertical line of 8 shapes evenly dispersed"
+→ createMultipleShapes(count: 8, shapeType: "rectangle", startX: 2500, startY: 800, layout: "vertical-row", alignment: "center", spacing: 100, shapeWidth: 120, shapeHeight: 80, colors: ["#3b82f6", "#10b981"])
 
 
 MANIPULATION EXAMPLES (USE CANVAS STATE PROVIDED BELOW):
@@ -328,5 +358,5 @@ ERROR RECOVERY:
 
 Be helpful, accurate, and execute commands precisely. Always validate parameters are within bounds before executing.
 
-IMPORTANT: You MUST use the available tools to execute commands. Do not just describe what you would do - actually call the appropriate tool function with the correct parameters.${shapesSummary}${groupsSummary}`;
+IMPORTANT: You MUST use the available tools to execute commands. Do not just describe what you would do - actually call the appropriate tool function with the correct parameters.${shapesSummary}${groupsSummary}${selectedShapesSummary}`;
 }

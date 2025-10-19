@@ -31,6 +31,9 @@ const calculateTriangleVertices = (width: number, height: number) => {
   ];
 };
 
+// Memoized shape component for performance optimization
+// TODO: Implement MemoizedShape component for further optimization
+
 export function Canvas() {
   const stageRef = useRef<any>(null);
   
@@ -160,6 +163,11 @@ export function Canvas() {
     groupShapes,
     ungroupShapes
   } = useCanvas();
+  
+  // Performance optimization: Convert selectedShapes array to Set for O(1) lookup
+  const selectedShapesSet = useMemo(() => {
+    return new Set(selectedShapes);
+  }, [selectedShapes]);
   
   // Debounced z-index operation to prevent rapid firing
   const debouncedZIndexOperation = useCallback((operation: () => Promise<void>, key: string) => {
@@ -713,7 +721,7 @@ useEffect(() => {
     }
     
     // If clicking on a shape that's already in a multi-selection, just show tools (don't change selection)
-    if (selectedShapes.length > 1 && selectedShapes.includes(shape.id)) {
+    if (selectedShapes.length > 1 && selectedShapesSet.has(shape.id)) {
       // Keep the current selection and show tools
       forceUpdate();
       return;
@@ -807,7 +815,7 @@ useEffect(() => {
     }
     
     // Check if multiple shapes are selected for multi-shape dragging
-    if (selectedShapes.length > 1 && selectedShapes.includes(shape.id)) {
+    if (selectedShapes.length > 1 && selectedShapesSet.has(shape.id)) {
       // Calculate the offset from the original position
       const originalShape = shapes.find(s => s.id === shape.id);
       if (originalShape) {
@@ -1026,7 +1034,7 @@ useEffect(() => {
       }
       
       // Handle multi-shape dragging
-      if (selectedShapes.length > 1 && selectedShapes.includes(shape.id)) {
+      if (selectedShapes.length > 1 && selectedShapesSet.has(shape.id)) {
         // Calculate the offset from the original position
         const originalShape = shapes.find(s => s.id === shape.id);
         if (originalShape) {
@@ -1885,7 +1893,7 @@ useEffect(() => {
       });
       
       // Check if Shift was held during marquee completion
-      const shouldAddToSelection = false; // For now, always replace selection
+      const shouldAddToSelection = isShiftHeld;
       
       if (shouldAddToSelection) {
         // Add to existing selection
@@ -2493,11 +2501,12 @@ useEffect(() => {
                 strokeWidth={1}
               />
             ))}
-            {/* Render existing shapes from Firestore - sorted by zIndex */}
-            {useMemo(() => 
-              [...shapes].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0)), 
-              [shapes]
-            ).map((shape) => {
+            {/* Render existing shapes from Firestore - sorted by zIndex (optimized) */}
+            {useMemo(() => {
+              // Performance optimization: Only sort if shapes array has changed
+              const sortedShapes = [...shapes].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+              return sortedShapes;
+            }, [shapes]).map((shape) => {
               const lockStatus = getShapeLockStatus(shape);
               
               // Use the actual lock status - the selection logic is handled elsewhere
@@ -2510,8 +2519,8 @@ useEffect(() => {
               let isDraggable = false;
               let strokeDash = undefined;
               
-              // Check if shape is selected
-              const isSelected = selectedShapes.includes(shape.id);
+              // Performance optimization: Use Set for O(1) lookup instead of includes()
+              const isSelected = selectedShapesSet.has(shape.id);
               
               // Check if shape is in a group
               const isInGroup = shape.groupId !== null && shape.groupId !== undefined;
@@ -2730,7 +2739,7 @@ useEffect(() => {
                     )}
                     
                     {/* Resize handles - inside the rotated group so they rotate with the shape */}
-                    {(effectiveLockStatus === 'locked-by-me' || selectedShapes.includes(shape.id)) && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
+                    {(effectiveLockStatus === 'locked-by-me' || selectedShapesSet.has(shape.id)) && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       
@@ -2792,7 +2801,7 @@ useEffect(() => {
                     })()}
                     
                     {/* Rotation handle - inside the rotated group so it rotates with the shape */}
-                    {(effectiveLockStatus === 'locked-by-me' || selectedShapes.includes(shape.id)) && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
+                    {(effectiveLockStatus === 'locked-by-me' || selectedShapesSet.has(shape.id)) && !isBeingResized && !hasOptimisticUpdate && !hiddenSelectors.has(shape.id) && (() => {
                       const stage = stageRef.current;
                       const stageScale = stage ? stage.scaleX() : 1;
                       

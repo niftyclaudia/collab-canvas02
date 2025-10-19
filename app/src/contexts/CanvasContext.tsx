@@ -513,7 +513,15 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
 
   // Chat helper functions
   const addChatMessage = useCallback((message: ChatMessage) => {
-    setChatMessages(prev => [...prev, message]);
+    setChatMessages(prev => {
+      // Check if message already exists to prevent duplicates
+      const exists = prev.some(existing => existing.id === message.id);
+      if (exists) {
+        console.warn('Duplicate message ID detected:', message.id);
+        return prev;
+      }
+      return [...prev, message];
+    });
   }, []);
 
   const clearChatMessages = useCallback(() => {

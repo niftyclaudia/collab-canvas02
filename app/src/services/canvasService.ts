@@ -283,7 +283,7 @@ export class CanvasService {
   }
 
   /**
-   * Subscribe to real-time shape updates
+   * Subscribe to real-time shape updates with performance optimizations
    * Returns unsubscribe function
    */
   subscribeToShapes(callback: (shapes: Shape[]) => void): () => void {
@@ -302,6 +302,8 @@ export class CanvasService {
             } as Shape);
           });
 
+          // Performance optimization: Sort shapes by zIndex for efficient rendering
+          shapes.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
           callback(shapes);
         },
         (error) => {
@@ -1405,12 +1407,27 @@ export class CanvasService {
   }
 
   /**
-   * Get current z-index range for all shapes
+   * Get current z-index range for all shapes (optimized for performance)
    * @returns Object with min and max z-index values
    */
   async getZIndexRange(): Promise<{ min: number; max: number }> {
     try {
-      const shapes = await this.getShapes();
+      const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
+      const shapesQuery = query(shapesCollectionRef, orderBy('zIndex', 'asc'));
+      const querySnapshot = await getDocs(shapesQuery);
+      
+      if (querySnapshot.empty) {
+        return { min: 0, max: 0 };
+      }
+
+      const shapes: Shape[] = [];
+      querySnapshot.forEach((doc) => {
+        shapes.push({
+          id: doc.id,
+          ...doc.data(),
+        } as Shape);
+      });
+
       if (shapes.length === 0) {
         return { min: 0, max: 0 };
       }
@@ -1597,6 +1614,86 @@ export class CanvasService {
       };
     } catch (error) {
       console.error('❌ Error getting shape bounds:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get performance metrics for monitoring
+   * @returns Performance metrics object
+   */
+  async getPerformanceMetrics(): Promise<{
+    shapeCount: number;
+    averageZIndex: number;
+    lastUpdated: Date | null;
+    memoryUsage?: number;
+  }> {
+    try {
+      const shapes = await this.getShapes();
+      const shapeCount = shapes.length;
+      
+      if (shapeCount === 0) {
+        return {
+          shapeCount: 0,
+          averageZIndex: 0,
+          lastUpdated: null,
+        };
+      }
+
+      const zIndexes = shapes.map(shape => shape.zIndex || 0);
+      const averageZIndex = zIndexes.reduce((sum, zIndex) => sum + zIndex, 0) / zIndexes.length;
+      
+      const lastUpdated = shapes.length > 0 
+        ? shapes.reduce((latest, shape) => {
+            const shapeTime = shape.updatedAt?.toDate();
+            return !latest || (shapeTime && shapeTime > latest) ? shapeTime : latest;
+          }, null as Date | null)
+        : null;
+
+      return {
+        shapeCount,
+        averageZIndex,
+        lastUpdated,
+        memoryUsage: typeof performance !== 'undefined' && (performance as any).memory 
+          ? (performance as any).memory.usedJSHeapSize 
+          : undefined,
+      };
+    } catch (error) {
+      console.error('❌ Error getting performance metrics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Optimize shape queries for large datasets
+   * @param limit - Maximum number of shapes to fetch
+   * @param offset - Number of shapes to skip
+   * @returns Paginated shapes array
+   */
+  async getShapesPaginated(limit: number = 100, offset: number = 0): Promise<Shape[]> {
+    try {
+      const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
+      const shapesQuery = query(
+        shapesCollectionRef, 
+        orderBy('updatedAt', 'desc')
+        // Note: Firestore doesn't support offset directly, 
+        // but we can implement cursor-based pagination if needed
+      );
+      
+      const querySnapshot = await getDocs(shapesQuery);
+      const shapes: Shape[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        shapes.push({
+          id: doc.id,
+          ...doc.data(),
+        } as Shape);
+      });
+
+      // Client-side pagination (for now)
+      return shapes.slice(offset, offset + limit);
+    } catch (error) {
+      console.error('❌ Error fetching paginated shapes:', error);
       throw error;
     }
   }

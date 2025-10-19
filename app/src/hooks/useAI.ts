@@ -8,23 +8,26 @@ import type { ChatMessage } from '../types/chat';
 export function useAI() {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { addChatMessage, setChatProcessing } = useCanvas();
+  const { addChatMessage, setChatProcessing, setSelectedShapes } = useCanvas();
 
-  const sendMessage = useCallback(async (content: string): Promise<ChatMessage | null> => {
+  const sendMessage = useCallback(async (content: string, selectedShapes?: string[]): Promise<ChatMessage | null> => {
     if (!user || !content.trim()) return null;
 
     setChatProcessing(true);
 
     try {
-      // Create AI service with toast callbacks
+      // Create AI service with toast callbacks and selection update callback
       const aiService = new AIService({
         onError: (message) => showToast(message, 'error'),
-        onSuccess: (message) => showToast(message, 'success')
+        onSuccess: (message) => showToast(message, 'success'),
+        onSelectionUpdate: (shapeIds) => {
+          setSelectedShapes(shapeIds);
+        }
       });
 
-      // Create user message
+      // Create user message with unique ID
       const userMessage: ChatMessage = {
-        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${performance.now()}`,
         type: 'user',
         content: content.trim(),
         timestamp: new Date(),
@@ -52,7 +55,7 @@ export function useAI() {
         if (complexResult.totalSteps > 1) {
           for (let i = 1; i <= complexResult.totalSteps; i++) {
             const progressMessage: ChatMessage = {
-              id: `progress_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
+              id: `progress_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}_${performance.now()}`,
               type: 'ai',
               content: `⚡ Step ${i}/${complexResult.totalSteps}: ${getStepDescription(content, i)}`,
               timestamp: new Date(),
@@ -74,7 +77,7 @@ export function useAI() {
 
         // Add final result message
         const resultMessage: ChatMessage = {
-          id: `result_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          id: `result_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${performance.now()}`,
           type: 'ai',
           content: complexResult.message,
           timestamp: new Date(),
@@ -85,7 +88,7 @@ export function useAI() {
         return resultMessage;
       } else {
         // Handle regular command
-        const aiResponse = await aiService.sendMessage(content.trim(), user.uid);
+        const aiResponse = await aiService.sendMessage(content.trim(), user.uid, selectedShapes);
 
         // Update user message status and add AI response
         const updatedUserMessage: ChatMessage = {
@@ -104,7 +107,7 @@ export function useAI() {
       
       // Create error message
       const errorMessage: ChatMessage = {
-        id: `error_${Date.now()}`,
+        id: `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${performance.now()}`,
         type: 'ai',
         content: "⚠️ AI service error. Please try again.",
         timestamp: new Date(),
