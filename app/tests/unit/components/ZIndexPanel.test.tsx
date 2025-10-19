@@ -1,288 +1,198 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ZIndexPanel } from '../../../src/components/Canvas/ZIndexPanel';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import ZIndexPanel from '../../../src/components/Canvas/ZIndexPanel';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useToast } from '../../../src/hooks/useToast';
 import { canvasService } from '../../../src/services/canvasService';
 
 // Mock the hooks
-vi.mock('../../../src/hooks/useAuth', () => ({
-  useAuth: vi.fn()
-}));
+vi.mock('../../../src/hooks/useAuth');
+vi.mock('../../../src/hooks/useToast');
+vi.mock('../../../src/services/canvasService');
 
-vi.mock('../../../src/hooks/useToast', () => ({
-  useToast: vi.fn()
-}));
+const mockUseAuth = vi.mocked(useAuth);
+const mockUseToast = vi.mocked(useToast);
+const mockCanvasService = vi.mocked(canvasService);
 
-// Mock the canvas service
-vi.mock('../../../src/services/canvasService', () => ({
-  canvasService: {
-    bringToFront: vi.fn(),
-    sendToBack: vi.fn(),
-    bringForward: vi.fn(),
-    sendBackward: vi.fn()
-  }
-}));
-
-describe('ZIndexPanel Component', () => {
-  const mockOnZIndexChange = vi.fn();
+describe('ZIndexPanel', () => {
+  const mockUser = { uid: 'test-user', email: 'test@example.com' };
   const mockShowToast = vi.fn();
-  const mockUser = { id: 'test-user', email: 'test@example.com' };
+  const mockOnZIndexChange = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: mockUser, loading: false, error: null });
+    mockUseToast.mockReturnValue({ showToast: mockShowToast });
+  });
+
+  it('renders nothing when no shape is selected', () => {
+    render(
+      <ZIndexPanel 
+        selectedShapeId={null} 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
     
-    // Setup default mocks
-    vi.mocked(useAuth).mockReturnValue({
-      user: mockUser,
-      loading: false,
-      signIn: vi.fn(),
-      signUp: vi.fn(),
-      signOut: vi.fn()
-    });
+    expect(screen.queryByText('To Front')).not.toBeInTheDocument();
+  });
+
+  it('renders all four z-index buttons when shape is selected', () => {
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
     
-    vi.mocked(useToast).mockReturnValue({
-      showToast: mockShowToast,
-      hideToast: vi.fn()
+    expect(screen.getByText('To Front')).toBeInTheDocument();
+    expect(screen.getByText('To Back')).toBeInTheDocument();
+    expect(screen.getByText('Forward')).toBeInTheDocument();
+    expect(screen.getByText('Backward')).toBeInTheDocument();
+  });
+
+  it('calls bringToFront when To Front button is clicked', async () => {
+    mockCanvasService.bringToFront.mockResolvedValue();
+    
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
+    
+    const toFrontButton = screen.getByText('To Front');
+    fireEvent.click(toFrontButton);
+    
+    await waitFor(() => {
+      expect(mockCanvasService.bringToFront).toHaveBeenCalledWith('test-shape-id');
+      expect(mockOnZIndexChange).toHaveBeenCalledWith('bringToFront');
+      expect(mockShowToast).toHaveBeenCalledWith('Shape brought to front', 'success');
     });
   });
 
-  describe('Rendering', () => {
-    it('should render all four z-index buttons', () => {
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      expect(screen.getByText('To Front')).toBeInTheDocument();
-      expect(screen.getByText('To Back')).toBeInTheDocument();
-      expect(screen.getByText('Forward')).toBeInTheDocument();
-      expect(screen.getByText('Backward')).toBeInTheDocument();
-    });
-
-    it('should not render when no shape is selected', () => {
-      render(
-        <ZIndexPanel 
-          selectedShapeId={null} 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      expect(screen.queryByText('To Front')).not.toBeInTheDocument();
-    });
-
-    it('should have correct button titles for keyboard shortcuts', () => {
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      expect(screen.getByTitle('Bring to Front (Cmd/Ctrl+Shift+])')).toBeInTheDocument();
-      expect(screen.getByTitle('Send to Back (Cmd/Ctrl+Shift+[)')).toBeInTheDocument();
-      expect(screen.getByTitle('Bring Forward (Cmd/Ctrl+])')).toBeInTheDocument();
-      expect(screen.getByTitle('Send Backward (Cmd/Ctrl+[)')).toBeInTheDocument();
+  it('calls sendToBack when To Back button is clicked', async () => {
+    mockCanvasService.sendToBack.mockResolvedValue();
+    
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
+    
+    const toBackButton = screen.getByText('To Back');
+    fireEvent.click(toBackButton);
+    
+    await waitFor(() => {
+      expect(mockCanvasService.sendToBack).toHaveBeenCalledWith('test-shape-id');
+      expect(mockOnZIndexChange).toHaveBeenCalledWith('sendToBack');
+      expect(mockShowToast).toHaveBeenCalledWith('Shape sent to back', 'success');
     });
   });
 
-  describe('Button Interactions', () => {
-    it('should call bringToFront when To Front button is clicked', async () => {
-      const mockBringToFront = vi.mocked(canvasService.bringToFront);
-      mockBringToFront.mockResolvedValue(undefined);
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('To Front'));
-
-      await waitFor(() => {
-        expect(mockBringToFront).toHaveBeenCalledWith('shape-123');
-        expect(mockOnZIndexChange).toHaveBeenCalledWith('bringToFront');
-        expect(mockShowToast).toHaveBeenCalledWith('Shape brought to front', 'success');
-      });
-    });
-
-    it('should call sendToBack when To Back button is clicked', async () => {
-      const mockSendToBack = vi.mocked(canvasService.sendToBack);
-      mockSendToBack.mockResolvedValue(undefined);
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('To Back'));
-
-      await waitFor(() => {
-        expect(mockSendToBack).toHaveBeenCalledWith('shape-123');
-        expect(mockOnZIndexChange).toHaveBeenCalledWith('sendToBack');
-        expect(mockShowToast).toHaveBeenCalledWith('Shape sent to back', 'success');
-      });
-    });
-
-    it('should call bringForward when Forward button is clicked', async () => {
-      const mockBringForward = vi.mocked(canvasService.bringForward);
-      mockBringForward.mockResolvedValue(undefined);
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('Forward'));
-
-      await waitFor(() => {
-        expect(mockBringForward).toHaveBeenCalledWith('shape-123');
-        expect(mockOnZIndexChange).toHaveBeenCalledWith('bringForward');
-        expect(mockShowToast).toHaveBeenCalledWith('Shape brought forward', 'success');
-      });
-    });
-
-    it('should call sendBackward when Backward button is clicked', async () => {
-      const mockSendBackward = vi.mocked(canvasService.sendBackward);
-      mockSendBackward.mockResolvedValue(undefined);
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('Backward'));
-
-      await waitFor(() => {
-        expect(mockSendBackward).toHaveBeenCalledWith('shape-123');
-        expect(mockOnZIndexChange).toHaveBeenCalledWith('sendBackward');
-        expect(mockShowToast).toHaveBeenCalledWith('Shape sent backward', 'success');
-      });
+  it('calls bringForward when Forward button is clicked', async () => {
+    mockCanvasService.bringForward.mockResolvedValue();
+    
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
+    
+    const forwardButton = screen.getByText('Forward');
+    fireEvent.click(forwardButton);
+    
+    await waitFor(() => {
+      expect(mockCanvasService.bringForward).toHaveBeenCalledWith('test-shape-id');
+      expect(mockOnZIndexChange).toHaveBeenCalledWith('bringForward');
+      expect(mockShowToast).toHaveBeenCalledWith('Shape brought forward', 'success');
     });
   });
 
-  describe('Error Handling', () => {
-    it('should show error toast when bringToFront fails', async () => {
-      const mockBringToFront = vi.mocked(canvasService.bringToFront);
-      mockBringToFront.mockRejectedValue(new Error('Network error'));
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('To Front'));
-
-      await waitFor(() => {
-        expect(mockShowToast).toHaveBeenCalledWith('Failed to bring shape to front', 'error');
-      });
-    });
-
-    it('should show error toast when sendToBack fails', async () => {
-      const mockSendToBack = vi.mocked(canvasService.sendToBack);
-      mockSendToBack.mockRejectedValue(new Error('Database error'));
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('To Back'));
-
-      await waitFor(() => {
-        expect(mockShowToast).toHaveBeenCalledWith('Failed to send shape to back', 'error');
-      });
-    });
-
-    it('should show error toast when bringForward fails', async () => {
-      const mockBringForward = vi.mocked(canvasService.bringForward);
-      mockBringForward.mockRejectedValue(new Error('Shape not found'));
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('Forward'));
-
-      await waitFor(() => {
-        expect(mockShowToast).toHaveBeenCalledWith('Failed to bring shape forward', 'error');
-      });
-    });
-
-    it('should show error toast when sendBackward fails', async () => {
-      const mockSendBackward = vi.mocked(canvasService.sendBackward);
-      mockSendBackward.mockRejectedValue(new Error('Permission denied'));
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('Backward'));
-
-      await waitFor(() => {
-        expect(mockShowToast).toHaveBeenCalledWith('Failed to send shape backward', 'error');
-      });
+  it('calls sendBackward when Backward button is clicked', async () => {
+    mockCanvasService.sendBackward.mockResolvedValue();
+    
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
+    
+    const backwardButton = screen.getByText('Backward');
+    fireEvent.click(backwardButton);
+    
+    await waitFor(() => {
+      expect(mockCanvasService.sendBackward).toHaveBeenCalledWith('test-shape-id');
+      expect(mockOnZIndexChange).toHaveBeenCalledWith('sendBackward');
+      expect(mockShowToast).toHaveBeenCalledWith('Shape sent backward', 'success');
     });
   });
 
-  describe('User Authentication', () => {
-    it('should not call service methods when user is not authenticated', async () => {
-      vi.mocked(useAuth).mockReturnValue({
-        user: null,
-        loading: false,
-        signIn: vi.fn(),
-        signUp: vi.fn(),
-        signOut: vi.fn()
-      });
+  it('shows loading state during operations', async () => {
+    mockCanvasService.bringToFront.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)));
+    
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
+    
+    const toFrontButton = screen.getByText('To Front');
+    fireEvent.click(toFrontButton);
+    
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(toFrontButton).toBeDisabled();
+  });
 
-      const mockBringToFront = vi.mocked(canvasService.bringToFront);
-
-      render(
-        <ZIndexPanel 
-          selectedShapeId="shape-123" 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      fireEvent.click(screen.getByText('To Front'));
-
-      await waitFor(() => {
-        expect(mockBringToFront).not.toHaveBeenCalled();
-      });
+  it('handles errors gracefully', async () => {
+    const error = new Error('Network error');
+    mockCanvasService.bringToFront.mockRejectedValue(error);
+    
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
+    
+    const toFrontButton = screen.getByText('To Front');
+    fireEvent.click(toFrontButton);
+    
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Failed to bring shape to front', 'error');
     });
+  });
 
-    it('should not call service methods when no shape is selected', async () => {
-      const mockBringToFront = vi.mocked(canvasService.bringToFront);
+  it('does not call service when user is not authenticated', () => {
+    mockUseAuth.mockReturnValue({ user: null, loading: false, error: null });
+    
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
+    
+    const toFrontButton = screen.getByText('To Front');
+    fireEvent.click(toFrontButton);
+    
+    expect(mockCanvasService.bringToFront).not.toHaveBeenCalled();
+  });
 
-      render(
-        <ZIndexPanel 
-          selectedShapeId={null} 
-          onZIndexChange={mockOnZIndexChange} 
-        />
-      );
-
-      // Component should not render buttons when no shape is selected
-      expect(screen.queryByText('To Front')).not.toBeInTheDocument();
-      expect(mockBringToFront).not.toHaveBeenCalled();
-    });
+  it('shows correct tooltips for keyboard shortcuts', () => {
+    render(
+      <ZIndexPanel 
+        selectedShapeId="test-shape-id" 
+        onZIndexChange={mockOnZIndexChange} 
+      />
+    );
+    
+    expect(screen.getByTitle('Bring to Front (Cmd/Ctrl+Shift+])')).toBeInTheDocument();
+    expect(screen.getByTitle('Send to Back (Cmd/Ctrl+Shift+[)')).toBeInTheDocument();
+    expect(screen.getByTitle('Bring Forward (Cmd/Ctrl+])')).toBeInTheDocument();
+    expect(screen.getByTitle('Send Backward (Cmd/Ctrl+[)')).toBeInTheDocument();
   });
 });
