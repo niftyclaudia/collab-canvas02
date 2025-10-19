@@ -342,6 +342,10 @@ export function calculateOptimalGridParams(
   const canvasWidth = 5000;
   const canvasHeight = 5000;
   
+  // Use shapeHeight and canvasHeight for vertical spacing calculations
+  const verticalSpacing = Math.max(shapeHeight * 0.1, 10);
+  const maxRows = Math.floor(canvasHeight / (shapeHeight + verticalSpacing));
+  
   // Start with a reasonable column count
   let columns = Math.min(Math.ceil(Math.sqrt(count)), maxColumns);
   
@@ -355,12 +359,16 @@ export function calculateOptimalGridParams(
   
   const rows = Math.ceil(count / columns);
   
+  // Ensure we don't exceed vertical canvas space
+  const finalRows = Math.min(rows, maxRows);
+  const finalColumns = Math.ceil(count / finalRows);
+  
   // Calculate optimal spacing
   const availableWidth = canvasWidth * 0.8; // Use 80% of canvas width
-  const totalShapeWidth = columns * shapeWidth;
-  const spacing = Math.max(minSpacing, (availableWidth - totalShapeWidth) / (columns - 1));
+  const totalShapeWidth = finalColumns * shapeWidth;
+  const spacing = Math.max(minSpacing, (availableWidth - totalShapeWidth) / (finalColumns - 1));
   
-  return { columns, spacing, rows };
+  return { columns: finalColumns, spacing, rows: finalRows };
 }
 
 /**
