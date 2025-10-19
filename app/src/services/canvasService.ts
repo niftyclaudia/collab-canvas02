@@ -15,6 +15,16 @@ import {
 import { firestore } from '../firebase';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 
+// Group interface for grouping shapes
+export interface Group {
+  id: string;
+  name?: string; // Optional user-defined name
+  shapeIds: string[]; // Array of shape IDs in this group
+  createdBy: string; // User ID who created the group
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
 // Shape interface matching the data model from task.md
 export interface Shape {
   id: string;
@@ -32,6 +42,8 @@ export interface Shape {
   fontWeight?: string;
   fontStyle?: string;
   textDecoration?: string;
+  // Grouping properties
+  groupId?: string | null; // Reference to group (if grouped)
   createdBy: string;
   createdAt: Timestamp;
   lockedBy?: string | null;
@@ -966,6 +978,333 @@ export class CanvasService {
       });
     } catch (error) {
       console.error('❌ Error updating font size:', error);
+      throw error;
+    }
+  }
+
+  // ===== GROUP OPERATIONS =====
+
+  /**
+   * Generate a new unique group ID
+   */
+  private generateGroupId(): string {
+    return `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Group multiple shapes together
+   * @param shapeIds - Array of shape IDs to group
+   * @param userId - User ID who is creating the group
+   * @param name - Optional group name
+   * @returns The group ID
+   */
+  async groupShapes(shapeIds: string[], userId: string, name?: string): Promise<string> {
+    try {
+      // Validate input
+      if (!shapeIds || shapeIds.length < 2) {
+        throw new Error('At least 2 shapes are required to create a group');
+      }
+
+      // Check if all shapes exist and are not already grouped
+      const shapePromises = shapeIds.map(shapeId => getDoc(doc(firestore, this.shapesCollectionPath, shapeId)));
+      const shapeDocs = await Promise.all(shapePromises);
+      
+      for (let i = 0; i < shapeDocs.length; i++) {
+        const shapeDoc = shapeDocs[i];
+        if (!shapeDoc.exists()) {
+          throw new Error(`Shape ${shapeIds[i]} not found`);
+        }
+        
+        const shapeData = shapeDoc.data() as Shape;
+        if (shapeData.groupId) {
+          throw new Error(`Shape ${shapeIds[i]} is already in a group`);
+        }
+      }
+
+      // Create group document
+      const groupId = this.generateGroupId();
+      const now = serverTimestamp() as Timestamp;
+      
+      const groupData: Omit<Group, 'id'> = {
+        name: name || `Group ${shapeIds.length}`,
+        shapeIds,
+        createdBy: userId,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const groupDocRef = doc(firestore, 'canvases/main/groups', groupId);
+      
+      // Use batch write to ensure atomicity
+      const batch = writeBatch(firestore);
+      
+      // Create group document
+      batch.set(groupDocRef, groupData);
+      
+      // Update all shapes with groupId
+      shapeIds.forEach(shapeId => {
+        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+        batch.update(shapeDocRef, {
+          groupId: groupId,
+          updatedAt: now,
+        });
+      });
+      
+      await batch.commit();
+      
+      return groupId;
+    } catch (error) {
+      console.error('❌ Error grouping shapes:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ungroup shapes by removing groupId from all shapes and deleting group document
+   * @param groupId - The group ID to ungroup
+   */
+  async ungroupShapes(groupId: string): Promise<void> {
+    try {
+      // Get group document
+      const groupDocRef = doc(firestore, 'canvases/main/groups', groupId);
+      const groupDoc = await getDoc(groupDocRef);
+      
+      if (!groupDoc.exists()) {
+        throw new Error('Group not found');
+      }
+      
+      const groupData = groupDoc.data() as Group;
+      const shapeIds = groupData.shapeIds;
+      
+      // Use batch write to ensure atomicity
+      const batch = writeBatch(firestore);
+      
+      // Remove groupId from all shapes
+      shapeIds.forEach(shapeId => {
+        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+        batch.update(shapeDocRef, {
+          groupId: null,
+          updatedAt: serverTimestamp(),
+        });
+      });
+      
+      // Delete group document
+      batch.delete(groupDocRef);
+      
+      await batch.commit();
+    } catch (error) {
+      console.error('❌ Error ungrouping shapes:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a group by ID
+   * @param groupId - The group ID
+   * @returns Group data or null if not found
+   */
+  async getGroup(groupId: string): Promise<Group | null> {
+    try {
+      const groupDocRef = doc(firestore, 'canvases/main/groups', groupId);
+      const groupDoc = await getDoc(groupDocRef);
+      
+      if (!groupDoc.exists()) {
+        return null;
+      }
+      
+      return {
+        id: groupId,
+        ...groupDoc.data(),
+      } as Group;
+    } catch (error) {
+      console.error('❌ Error getting group:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all shapes in a group
+   * @param groupId - The group ID
+   * @returns Array of shapes in the group
+   */
+  async getShapesInGroup(groupId: string): Promise<Shape[]> {
+    try {
+      const group = await this.getGroup(groupId);
+      if (!group) {
+        return [];
+      }
+      
+      // Get all shapes in the group
+      const shapePromises = group.shapeIds.map(shapeId => 
+        getDoc(doc(firestore, this.shapesCollectionPath, shapeId))
+      );
+      const shapeDocs = await Promise.all(shapePromises);
+      
+      const shapes: Shape[] = [];
+      shapeDocs.forEach((shapeDoc, index) => {
+        if (shapeDoc.exists()) {
+          shapes.push({
+            id: group.shapeIds[index],
+            ...shapeDoc.data(),
+          } as Shape);
+        }
+      });
+      
+      return shapes;
+    } catch (error) {
+      console.error('❌ Error getting shapes in group:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Move all shapes in a group by the specified delta
+   * @param groupId - The group ID
+   * @param deltaX - X offset to move the group
+   * @param deltaY - Y offset to move the group
+   */
+  async moveGroup(groupId: string, deltaX: number, deltaY: number): Promise<void> {
+    try {
+      const shapes = await this.getShapesInGroup(groupId);
+      if (shapes.length === 0) {
+        throw new Error('Group is empty');
+      }
+      
+      // Use batch write to move all shapes atomically
+      const batch = writeBatch(firestore);
+      const now = serverTimestamp() as Timestamp;
+      
+      shapes.forEach(shape => {
+        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shape.id);
+        batch.update(shapeDocRef, {
+          x: shape.x + deltaX,
+          y: shape.y + deltaY,
+          updatedAt: now,
+        });
+      });
+      
+      await batch.commit();
+    } catch (error) {
+      console.error('❌ Error moving group:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete all shapes in a group and the group itself
+   * @param groupId - The group ID
+   */
+  async deleteGroup(groupId: string): Promise<void> {
+    try {
+      const shapes = await this.getShapesInGroup(groupId);
+      
+      // Use batch write to delete all shapes and group atomically
+      const batch = writeBatch(firestore);
+      
+      // Delete all shapes in the group
+      shapes.forEach(shape => {
+        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shape.id);
+        batch.delete(shapeDocRef);
+      });
+      
+      // Delete group document
+      const groupDocRef = doc(firestore, 'canvases/main/groups', groupId);
+      batch.delete(groupDocRef);
+      
+      await batch.commit();
+    } catch (error) {
+      console.error('❌ Error deleting group:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Duplicate all shapes in a group with offset
+   * @param groupId - The group ID
+   * @param offsetX - X offset for duplicated shapes
+   * @param offsetY - Y offset for duplicated shapes
+   * @returns Array of new shape IDs
+   */
+  async duplicateGroup(groupId: string, offsetX: number, offsetY: number): Promise<string[]> {
+    try {
+      const shapes = await this.getShapesInGroup(groupId);
+      if (shapes.length === 0) {
+        throw new Error('Group is empty');
+      }
+      
+      const newShapeIds: string[] = [];
+      
+      // Create new shapes with offset
+      for (const shape of shapes) {
+        const newShapeData: CreateShapeData = {
+          type: shape.type,
+          x: shape.x + offsetX,
+          y: shape.y + offsetY,
+          width: shape.width,
+          height: shape.height,
+          color: shape.color,
+          rotation: shape.rotation || 0,
+          createdBy: shape.createdBy,
+        };
+        
+        // Add shape-specific properties
+        if (shape.type === 'circle' && shape.radius !== undefined) {
+          newShapeData.radius = shape.radius;
+        }
+        
+        if (shape.type === 'text') {
+          if (shape.text !== undefined) newShapeData.text = shape.text;
+          if (shape.fontSize !== undefined) newShapeData.fontSize = shape.fontSize;
+          if (shape.fontWeight !== undefined) newShapeData.fontWeight = shape.fontWeight;
+          if (shape.fontStyle !== undefined) newShapeData.fontStyle = shape.fontStyle;
+          if (shape.textDecoration !== undefined) newShapeData.textDecoration = shape.textDecoration;
+        }
+        
+        const newShape = await this.createShape(newShapeData);
+        newShapeIds.push(newShape.id);
+      }
+      
+      return newShapeIds;
+    } catch (error) {
+      console.error('❌ Error duplicating group:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Subscribe to real-time group updates
+   * @param canvasId - Canvas ID (currently 'main')
+   * @param callback - Callback function for group updates
+   * @returns Unsubscribe function
+   */
+  subscribeToGroups(canvasId: string, callback: (groups: Group[]) => void): () => void {
+    try {
+      const groupsCollectionRef = collection(firestore, `canvases/${canvasId}/groups`);
+      const groupsQuery = query(groupsCollectionRef, orderBy('updatedAt', 'desc'));
+
+      const unsubscribe = onSnapshot(
+        groupsQuery,
+        (querySnapshot) => {
+          const groups: Group[] = [];
+          querySnapshot.forEach((doc) => {
+            groups.push({
+              id: doc.id,
+              ...doc.data(),
+            } as Group);
+          });
+
+          callback(groups);
+        },
+        (error) => {
+          console.error('❌ Error in groups subscription:', error);
+          // Call callback with empty array on error to prevent crashes
+          callback([]);
+        }
+      );
+
+      return unsubscribe;
+    } catch (error) {
+      console.error('❌ Error setting up groups subscription:', error);
       throw error;
     }
   }

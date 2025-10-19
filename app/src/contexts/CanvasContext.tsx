@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useCallback, useRef } from 'react';
 import { DEFAULT_SHAPE_COLOR } from '../utils/constants';
 import { canvasService } from '../services/canvasService';
-import type { Shape, CreateShapeData } from '../services/canvasService';
+import type { Shape, CreateShapeData, Group } from '../services/canvasService';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
@@ -38,6 +38,10 @@ export interface CanvasState {
   isLoadingShapes: boolean;
   // Lock status tracking (client-side)
   lockStatus: Record<string, 'pending' | 'confirmed' | 'expired' | 'failed'>;
+  
+  // Groups state
+  groups: Group[];
+  isLoadingGroups: boolean;
   
   // Selection state
   selectedShapes: string[];
@@ -79,6 +83,13 @@ export interface CanvasState {
   updateShape: (shapeId: string, updates: any) => Promise<void>;
   clearCanvas: () => Promise<void>;
   
+  // Group operations
+  groupShapes: (shapeIds: string[], name?: string) => Promise<string>;
+  ungroupShapes: (groupId: string) => Promise<void>;
+  getShapesInGroup: (groupId: string) => Shape[];
+  isShapeInGroup: (shapeId: string) => boolean;
+  getGroupForShape: (shapeId: string) => Group | null;
+  
   // Locking operations
   lockShape: (shapeId: string) => Promise<boolean>;
   unlockShape: (shapeId: string) => Promise<void>;
@@ -115,6 +126,10 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [isLoadingShapes, setIsLoadingShapes] = useState<boolean>(true);
   const [lockStatus, setLockStatus] = useState<Record<string, 'pending' | 'confirmed' | 'expired' | 'failed'>>({});
+  
+  // Groups state
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState<boolean>(true);
   const [drawingState, setDrawingState] = useState<DrawingState>(initialDrawingState);
   const [selectedShapes, setSelectedShapesState] = useState<string[]>([]);
   
@@ -192,6 +207,24 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     };
   }, [user]);
 
+  // Subscribe to groups changes
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    setIsLoadingGroups(true);
+    
+    const unsubscribe = canvasService.subscribeToGroups('main', (updatedGroups) => {
+      setGroups(updatedGroups);
+      setIsLoadingGroups(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user]);
+
   // Shape operations
   const createShape = useCallback(async (shapeData: Omit<CreateShapeData, 'createdBy'>) => {
     if (!user) {
@@ -235,6 +268,57 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       throw error;
     }
   }, [showToast]);
+
+  // Group operations
+  const groupShapes = useCallback(async (shapeIds: string[], name?: string) => {
+    if (!user) {
+      throw new Error('User must be authenticated to group shapes');
+    }
+    
+    try {
+      const groupId = await canvasService.groupShapes(shapeIds, user.uid, name);
+      showToast(`Grouped ${shapeIds.length} shapes`, 'success');
+      
+      // Keep the shapes selected after grouping
+      // The shapes will be updated with groupId via the subscription
+      // but we want to keep them selected to show the group is working
+      setSelectedShapesState(shapeIds);
+      return groupId;
+    } catch (error) {
+      console.error('Failed to group shapes:', error);
+      showToast('Failed to group shapes', 'error');
+      throw error;
+    }
+  }, [user, showToast]);
+
+  const ungroupShapes = useCallback(async (groupId: string) => {
+    try {
+      await canvasService.ungroupShapes(groupId);
+      showToast('Shapes ungrouped', 'success');
+    } catch (error) {
+      console.error('Failed to ungroup shapes:', error);
+      showToast('Failed to ungroup shapes', 'error');
+      throw error;
+    }
+  }, [showToast]);
+
+  const getShapesInGroup = useCallback((groupId: string): Shape[] => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return [];
+    
+    return shapes.filter(shape => group.shapeIds.includes(shape.id));
+  }, [groups, shapes]);
+
+  const isShapeInGroup = useCallback((shapeId: string): boolean => {
+    return shapes.some(shape => shape.id === shapeId && shape.groupId);
+  }, [shapes]);
+
+  const getGroupForShape = useCallback((shapeId: string): Group | null => {
+    const shape = shapes.find(s => s.id === shapeId);
+    if (!shape || !shape.groupId) return null;
+    
+    return groups.find(g => g.id === shape.groupId) || null;
+  }, [shapes, groups]);
 
   // Drawing helpers
   const startDrawing = useCallback((x: number, y: number) => {
@@ -785,6 +869,8 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     shapes,
     isLoadingShapes,
     lockStatus,
+    groups,
+    isLoadingGroups,
     selectedShapes,
     setSelectedShapes,
     toggleSelection,
@@ -810,6 +896,11 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     createShape,
     updateShape,
     clearCanvas,
+    groupShapes,
+    ungroupShapes,
+    getShapesInGroup,
+    isShapeInGroup,
+    getGroupForShape,
     lockShape,
     unlockShape,
     isShapeLockedByMe,

@@ -79,6 +79,9 @@ export function Canvas() {
   // Ref to track current selection for keyboard shortcuts
   const selectedShapesRef = useRef<string[]>([]);
   
+  // State to track individual shape selection within a group (for double-click behavior)
+  const [individuallySelectedShapeId, setIndividuallySelectedShapeId] = useState<string | null>(null);
+  
   // Ref to track clipboard for keyboard shortcuts
   const clipboardRef = useRef<Shape[] | null>(null);
   
@@ -149,7 +152,9 @@ export function Canvas() {
     cancelTextEdit,
     applyBoldFormatting,
     applyItalicFormatting,
-    applyUnderlineFormatting
+    applyUnderlineFormatting,
+    groupShapes,
+    ungroupShapes
   } = useCanvas();
   
   // Toast hook for error messages
@@ -559,6 +564,7 @@ useEffect(() => {
 
   // Shape click handlers - simplified for better reliability
   const handleShapeClick = useCallback(async (e: KonvaEventObject<MouseEvent>, shape: Shape) => {
+    console.log('Shape click handler triggered for shape:', shape.id, 'Current selection:', selectedShapes);
     e.cancelBubble = true; // Prevent event from bubbling to stage
     
     // Check if shape is locked by another user and show toast notification
@@ -572,8 +578,59 @@ useEffect(() => {
       return; // Don't proceed with selection
     }
     
-    // Check if Shift key is held for multi-select
+    // Clear individual selection when clicking on any shape
+    if (individuallySelectedShapeId) {
+      setIndividuallySelectedShapeId(null);
+    }
+    
+    // Handle group selection logic
+    if (shape.groupId) {
+      // Find all shapes in the same group
+      const groupShapes = shapes.filter(s => s.groupId === shape.groupId);
+      
+      console.log('Group selection - clicked shape:', shape.id, 'groupId:', shape.groupId);
+      console.log('Group shapes found:', groupShapes.map(s => s.id));
+      console.log('Current selection before group selection:', selectedShapes);
+      
+      if (groupShapes.length > 1) {
+        // Check if Shift key is held for multi-select
+        if (e.evt.shiftKey) {
+          // Toggle entire group selection
+          const groupShapeIds = groupShapes.map(s => s.id);
+          const isGroupSelected = groupShapeIds.every(id => selectedShapes.includes(id));
+          
+          console.log('Shift+click on group - isGroupSelected:', isGroupSelected);
+          
+          if (isGroupSelected) {
+            // Deselect entire group
+            const newSelection = selectedShapes.filter((id: string) => !groupShapeIds.includes(id));
+            setSelectedShapes(newSelection);
+            console.log('Deselected group, new selection:', newSelection);
+          } else {
+            // Select entire group
+            const newSelection = [...selectedShapes.filter((id: string) => !groupShapeIds.includes(id)), ...groupShapeIds];
+            setSelectedShapes(newSelection);
+            console.log('Selected group, new selection:', newSelection);
+          }
+          forceUpdate();
+          return;
+        } else {
+          // Single click on grouped shape - select entire group
+          const groupShapeIds = groupShapes.map(s => s.id);
+          console.log('Single click on group - selecting all shapes:', groupShapeIds);
+          setSelectedShapes(groupShapeIds);
+          console.log('Group selection set, calling forceUpdate');
+          forceUpdate();
+          return;
+        }
+      }
+    }
+    
+    // Check if Shift key is held for multi-select (non-grouped shapes)
     if (e.evt.shiftKey) {
+      console.log('Shift+click detected for shape:', shape.id);
+      console.log('Current selection before toggle:', selectedShapes);
+      
       // Toggle selection (add if not present, remove if present)
       toggleSelection(shape.id);
       
@@ -638,6 +695,53 @@ useEffect(() => {
     const node = e.target as Konva.Group;
     const centerX = node.x();
     const centerY = node.y();
+    
+    // Check if shape is in a group and handle group dragging
+    if (shape.groupId) {
+      // Find all shapes in the same group
+      const groupShapes = shapes.filter(s => s.groupId === shape.groupId);
+      
+      if (groupShapes.length > 1) {
+        // Calculate the offset from the original position
+        const originalShape = shapes.find(s => s.id === shape.id);
+        if (originalShape) {
+          let originalCenterX, originalCenterY;
+          
+          if (originalShape.type === 'circle') {
+            originalCenterX = originalShape.x;
+            originalCenterY = originalShape.y;
+          } else {
+            originalCenterX = originalShape.x + originalShape.width / 2;
+            originalCenterY = originalShape.y + originalShape.height / 2;
+          }
+          
+          const deltaX = centerX - originalCenterX;
+          const deltaY = centerY - originalCenterY;
+          
+          // Apply the same offset to all shapes in the group
+          groupShapes.forEach(groupShape => {
+            if (groupShape.id !== shape.id) {
+              const otherNode = shapeNodesRef.current.get(groupShape.id);
+              
+              if (otherNode) {
+                let otherCenterX, otherCenterY;
+                
+                if (groupShape.type === 'circle') {
+                  otherCenterX = groupShape.x;
+                  otherCenterY = groupShape.y;
+                } else {
+                  otherCenterX = groupShape.x + groupShape.width / 2;
+                  otherCenterY = groupShape.y + groupShape.height / 2;
+                }
+                
+                otherNode.x(otherCenterX + deltaX);
+                otherNode.y(otherCenterY + deltaY);
+              }
+            }
+          });
+        }
+      }
+    }
     
     // Check if multiple shapes are selected for multi-shape dragging
     if (selectedShapes.length > 1 && selectedShapes.includes(shape.id)) {
@@ -798,6 +902,66 @@ useEffect(() => {
     }
     
     try {
+      // Handle group dragging
+      if (shape.groupId) {
+        // Find all shapes in the same group
+        const groupShapes = shapes.filter(s => s.groupId === shape.groupId);
+        
+        if (groupShapes.length > 1) {
+          // Calculate the offset from the original position
+          const originalShape = shapes.find(s => s.id === shape.id);
+          if (originalShape) {
+            let originalCenterX, originalCenterY;
+            
+            if (originalShape.type === 'circle') {
+              originalCenterX = originalShape.x;
+              originalCenterY = originalShape.y;
+            } else {
+              originalCenterX = originalShape.x + originalShape.width / 2;
+              originalCenterY = originalShape.y + originalShape.height / 2;
+            }
+            
+            const deltaX = centerX - originalCenterX;
+            const deltaY = centerY - originalCenterY;
+            
+            // Update all shapes in the group in Firestore
+            const updatePromises = groupShapes.map(async (groupShape) => {
+              if (groupShape.id !== shape.id) {
+                let newX, newY;
+                
+                if (groupShape.type === 'circle') {
+                  newX = groupShape.x + deltaX;
+                  newY = groupShape.y + deltaY;
+                } else {
+                  newX = groupShape.x + deltaX;
+                  newY = groupShape.y + deltaY;
+                }
+                
+                await canvasService.updateShape(groupShape.id, {
+                  x: newX,
+                  y: newY,
+                });
+              }
+            });
+            
+            // Update the dragged shape
+            await canvasService.updateShape(shape.id, finalPosition);
+            
+            // Wait for all group updates to complete
+            await Promise.all(updatePromises);
+            
+            // Unlock the shape but maintain group selection
+            await unlockShape(shape.id);
+            
+            // Keep all shapes in the group selected after drag
+            const groupShapeIds = groupShapes.map(s => s.id);
+            setSelectedShapes(groupShapeIds);
+            
+            return;
+          }
+        }
+      }
+      
       // Handle multi-shape dragging
       if (selectedShapes.length > 1 && selectedShapes.includes(shape.id)) {
         // Calculate the offset from the original position
@@ -866,6 +1030,9 @@ useEffect(() => {
           
           // Unlock all selected shapes
           await Promise.all(selectedShapes.map(shapeId => unlockShape(shapeId)));
+          
+          // Maintain selection after multi-shape drag
+          setSelectedShapes(selectedShapes);
         }
       } else {
         // Single shape dragging (existing logic)
@@ -1440,6 +1607,8 @@ useEffect(() => {
 
   // Background click handler (deselect + drawing + marquee)
   const handleStageClick = useCallback(async (e: KonvaEventObject<MouseEvent>) => {
+    console.log('Stage click handler triggered - target:', e.target.getClassName(), 'id:', e.target.id());
+    
     // Simplified background detection - if we clicked on the stage itself or canvas background
     const targetClass = e.target.getClassName();
     const targetId = e.target.id();
@@ -1447,6 +1616,14 @@ useEffect(() => {
     // Check if we clicked on the stage background or canvas background
     const isBackground = targetClass === 'Stage' || 
                         (targetClass === 'Rect' && targetId === 'canvas-background');
+    
+    console.log('Is background click:', isBackground, 'Current selection:', selectedShapes);
+    
+    // Only process stage clicks on actual background elements
+    if (!isBackground) {
+      console.log('Stage click on non-background element, ignoring');
+      return;
+    }
     
     if (isBackground) {
       // Start marquee selection if not in create mode AND holding Shift key
@@ -1480,6 +1657,8 @@ useEffect(() => {
       
       // Deselect all shapes if any - clear selection immediately for better UX
       if (selectedShapes.length > 0) {
+        console.log('Stage click - deselecting all shapes:', selectedShapes);
+        
         // Hide selectors immediately by adding to hidden set
         selectedShapes.forEach(shapeId => {
           setHiddenSelectors(prev => new Set(prev).add(shapeId));
@@ -1891,6 +2070,48 @@ useEffect(() => {
     }
   }, [user, showToast, selectedShapes, setSelectedShapes]);
 
+  // Handle group shapes
+  const handleGroupShapes = useCallback(async () => {
+    if (selectedShapes.length < 2) {
+      showToast('Select 2 or more shapes to group', 'error');
+      return;
+    }
+    
+    try {
+      const groupId = await groupShapes(selectedShapes);
+      // Keep the shapes selected after grouping to show the group is working
+      // The shapes will be updated with groupId via the subscription
+      console.log('Grouped shapes with ID:', groupId);
+    } catch (error) {
+      console.error('Failed to group shapes:', error);
+      // Error handling is done in the context
+    }
+  }, [selectedShapes, groupShapes, showToast]);
+
+  // Handle ungroup shapes
+  const handleUngroupShapes = useCallback(async () => {
+    if (selectedShapes.length === 0) {
+      showToast('No shapes selected to ungroup', 'error');
+      return;
+    }
+    
+    // Find the group ID from the first selected shape
+    const firstSelectedShape = shapes.find(s => s.id === selectedShapes[0]);
+    if (!firstSelectedShape || !firstSelectedShape.groupId) {
+      showToast('Selected shapes are not in a group', 'error');
+      return;
+    }
+    
+    try {
+      await ungroupShapes(firstSelectedShape.groupId);
+      // Clear selection after ungrouping
+      setSelectedShapes([]);
+    } catch (error) {
+      console.error('Failed to ungroup shapes:', error);
+      // Error handling is done in the context
+    }
+  }, [selectedShapes, shapes, ungroupShapes, setSelectedShapes, showToast]);
+
   // Track Shift key state for marquee selection
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1968,6 +2189,20 @@ useEffect(() => {
         return;
       }
 
+      // Handle Ctrl/Cmd + G for group
+      if ((e.ctrlKey || e.metaKey) && e.key === 'g' && !e.shiftKey) {
+        e.preventDefault();
+        handleGroupShapes();
+        return;
+      }
+
+      // Handle Ctrl/Cmd + Shift + G for ungroup
+      if ((e.ctrlKey || e.metaKey) && e.key === 'G' && e.shiftKey) {
+        e.preventDefault();
+        handleUngroupShapes();
+        return;
+      }
+
       // Text formatting shortcuts - only work when a text shape is selected and not editing
       if (selectedShapes.length === 1 && !editingTextId) {
         const selectedShape = shapes.find(shape => shape.id === selectedShapes[0]);
@@ -1998,7 +2233,7 @@ useEffect(() => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [drawingState.isDrawing, cancelDrawing, selectedShapes, setSelectedShapes, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected, handleDuplicateShape, editingTextId, shapes, applyBoldFormatting, applyItalicFormatting, applyUnderlineFormatting]);
+  }, [drawingState.isDrawing, cancelDrawing, selectedShapes, setSelectedShapes, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected, handleDuplicateShape, handleGroupShapes, handleUngroupShapes, editingTextId, shapes, applyBoldFormatting, applyItalicFormatting, applyUnderlineFormatting]);
 
   // Clear preview dimensions once Firestore update is confirmed
   useEffect(() => {
@@ -2104,6 +2339,7 @@ useEffect(() => {
                 setHiddenSelectors(prev => new Set(prev).add(shapeId));
               });
               setSelectedShapes([]);
+              setIndividuallySelectedShapeId(null); // Clear individual selection
               forceUpdate();
               selectedShapes.forEach(shapeId => {
                 unlockShape(shapeId).catch(error => {
@@ -2154,9 +2390,13 @@ useEffect(() => {
               let strokeWidth = 2;
               let opacity = 1;
               let isDraggable = false;
+              let strokeDash = undefined;
               
               // Check if shape is selected
               const isSelected = selectedShapes.includes(shape.id);
+              
+              // Check if shape is in a group
+              const isInGroup = shape.groupId !== null && shape.groupId !== undefined;
               
               if (effectiveLockStatus === 'locked-by-me') {
                 strokeColor = '#10b981'; // Green border
@@ -2169,6 +2409,11 @@ useEffect(() => {
               } else if (isSelected) {
                 strokeColor = '#3b82f6'; // Blue border for selection
                 strokeWidth = 3;
+                isDraggable = true;
+              } else if (isInGroup) {
+                // Show light purple outline for grouped shapes
+                strokeColor = '#8b5cf6'; // Light purple border
+                strokeWidth = 2;
                 isDraggable = true;
               }
               
@@ -2235,6 +2480,17 @@ useEffect(() => {
                     rotation={currentRotation}
                     draggable={isDraggable && !hasOptimisticUpdate}
                     onClick={(e) => handleShapeClick(e, shape)}
+                    onDblClick={(e) => {
+                      e.cancelBubble = true;
+                      // Double-click on grouped shape - enter individual selection mode
+                      if (shape.groupId) {
+                        // Keep the group selected but also mark this shape as individually selected
+                        const groupShapes = shapes.filter(s => s.groupId === shape.groupId);
+                        setSelectedShapes(groupShapes.map(s => s.id));
+                        setIndividuallySelectedShapeId(shape.id);
+                        forceUpdate();
+                      }
+                    }}
                     onDragMove={(e) => handleShapeDragMove(e, shape)}
                     onDragEnd={(e) => handleShapeDragEnd(e, shape)}
                     listening={effectiveLockStatus !== 'locked-by-other' && !hasOptimisticUpdate}
@@ -2249,6 +2505,7 @@ useEffect(() => {
                         fill={shape.color}
                         stroke={strokeColor}
                         strokeWidth={strokeWidth}
+                        strokeDash={strokeDash}
                         opacity={opacity}
                         listening={true}
                       />
@@ -2262,6 +2519,7 @@ useEffect(() => {
                         fill={shape.color}
                         stroke={strokeColor}
                         strokeWidth={strokeWidth}
+                        strokeDash={strokeDash}
                         opacity={opacity}
                         listening={true}
                       />
@@ -2278,6 +2536,7 @@ useEffect(() => {
                           fill={shape.color}
                           stroke={strokeColor}
                           strokeWidth={strokeWidth}
+                          strokeDash={strokeDash}
                           opacity={opacity}
                           listening={true}
                         />
@@ -2492,6 +2751,73 @@ useEffect(() => {
                 </React.Fragment>
               );
             })}
+            
+            {/* Render group outlines for selected groups */}
+            {(() => {
+              // Get all unique group IDs from selected shapes
+              const selectedGroupIds = new Set<string>();
+              selectedShapes.forEach(shapeId => {
+                const shape = shapes.find(s => s.id === shapeId);
+                if (shape?.groupId) {
+                  selectedGroupIds.add(shape.groupId);
+                }
+              });
+              
+              
+              return Array.from(selectedGroupIds).map(groupId => {
+                // Get all shapes in this group
+                const groupShapes = shapes.filter(shape => shape.groupId === groupId);
+                if (groupShapes.length === 0) return null;
+                
+                // Calculate bounding box for the group
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                
+                groupShapes.forEach(shape => {
+                  let shapeX, shapeY, shapeWidth, shapeHeight;
+                  
+                  if (shape.type === 'circle') {
+                    const radius = shape.radius || shape.width / 2;
+                    shapeX = shape.x - radius;
+                    shapeY = shape.y - radius;
+                    shapeWidth = radius * 2;
+                    shapeHeight = radius * 2;
+                  } else {
+                    shapeX = shape.x;
+                    shapeY = shape.y;
+                    shapeWidth = shape.width;
+                    shapeHeight = shape.height;
+                  }
+                  
+                  minX = Math.min(minX, shapeX);
+                  minY = Math.min(minY, shapeY);
+                  maxX = Math.max(maxX, shapeX + shapeWidth);
+                  maxY = Math.max(maxY, shapeY + shapeHeight);
+                });
+                
+                // Add some padding around the group outline
+                const padding = 8;
+                const outlineX = minX - padding;
+                const outlineY = minY - padding;
+                const outlineWidth = (maxX - minX) + (padding * 2);
+                const outlineHeight = (maxY - minY) + (padding * 2);
+                
+                
+                return (
+                  <Rect
+                    key={`group-outline-${groupId}`}
+                    x={outlineX}
+                    y={outlineY}
+                    width={outlineWidth}
+                    height={outlineHeight}
+                    fill="transparent"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dash={[8, 4]}
+                    listening={false}
+                  />
+                );
+              });
+            })()}
             
             {/* Render preview shape during drawing */}
             {drawingState.isDrawing && drawingState.previewShape && (() => {
@@ -2783,6 +3109,165 @@ useEffect(() => {
                     height={40 / stageScale}
                     listening={false}
                   />
+                </Group>
+              );
+            })()}
+            
+            {/* Group bounding box - show when any shape in a group is selected */}
+            {(() => {
+              // Find if any selected shape is in a group
+              const selectedShapesInGroups = selectedShapes.filter(shapeId => {
+                const shape = shapes.find(s => s.id === shapeId);
+                return shape && shape.groupId;
+              });
+              
+              if (selectedShapesInGroups.length === 0) return null;
+              
+              // Get the group ID from the first selected shape
+              const firstSelectedShape = shapes.find(s => s.id === selectedShapesInGroups[0]);
+              if (!firstSelectedShape || !firstSelectedShape.groupId) return null;
+              
+              // Find all shapes in this group
+              const groupShapes = shapes.filter(s => s.groupId === firstSelectedShape.groupId);
+              if (groupShapes.length < 2) return null;
+              
+              // Calculate bounding box for the group
+              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+              
+              groupShapes.forEach(shape => {
+                let shapeMinX, shapeMinY, shapeMaxX, shapeMaxY;
+                
+                if (shape.type === 'circle') {
+                  const radius = shape.radius || shape.width / 2;
+                  shapeMinX = shape.x - radius;
+                  shapeMinY = shape.y - radius;
+                  shapeMaxX = shape.x + radius;
+                  shapeMaxY = shape.y + radius;
+                } else {
+                  shapeMinX = shape.x;
+                  shapeMinY = shape.y;
+                  shapeMaxX = shape.x + shape.width;
+                  shapeMaxY = shape.y + shape.height;
+                }
+                
+                minX = Math.min(minX, shapeMinX);
+                minY = Math.min(minY, shapeMinY);
+                maxX = Math.max(maxX, shapeMaxX);
+                maxY = Math.max(maxY, shapeMaxY);
+              });
+              
+              // Add padding around the group
+              const padding = 10;
+              const groupX = minX - padding;
+              const groupY = minY - padding;
+              const groupWidth = (maxX - minX) + (padding * 2);
+              const groupHeight = (maxY - minY) + (padding * 2);
+              
+              // Check if we're in individual selection mode
+              const isIndividualSelection = individuallySelectedShapeId !== null;
+              
+              return (
+                <Group>
+                  {/* Group bounding box - subtle outline when in individual selection mode */}
+                  <Rect
+                    x={groupX}
+                    y={groupY}
+                    width={groupWidth}
+                    height={groupHeight}
+                    fill="transparent" // No background fill
+                    stroke={isIndividualSelection ? "#808080" : "#8b5cf6"} // Grey or purple border
+                    strokeWidth={1} // Thin border
+                    dash={[4, 4]} // Dashed border
+                    listening={false}
+                  />
+                  
+                  {/* Group resize handles */}
+                  {[
+                    { x: groupX, y: groupY }, // Top-left
+                    { x: groupX + groupWidth/2, y: groupY }, // Top-center
+                    { x: groupX + groupWidth, y: groupY }, // Top-right
+                    { x: groupX, y: groupY + groupHeight/2 }, // Left-center
+                    { x: groupX + groupWidth, y: groupY + groupHeight/2 }, // Right-center
+                    { x: groupX, y: groupY + groupHeight }, // Bottom-left
+                    { x: groupX + groupWidth/2, y: groupY + groupHeight }, // Bottom-center
+                    { x: groupX + groupWidth, y: groupY + groupHeight }, // Bottom-right
+                  ].map((handle, index) => (
+                    <Rect
+                      key={`group-handle-${index}`}
+                      x={handle.x - 4}
+                      y={handle.y - 4}
+                      width={8}
+                      height={8}
+                      fill="white"
+                      stroke={isIndividualSelection ? "#808080" : "#8b5cf6"}
+                      strokeWidth={2}
+                      cornerRadius={2}
+                      listening={false}
+                    />
+                  ))}
+                </Group>
+              );
+            })()}
+            
+            {/* Individual shape selection box - show when a shape is individually selected within a group */}
+            {individuallySelectedShapeId && (() => {
+              const individualShape = shapes.find(s => s.id === individuallySelectedShapeId);
+              if (!individualShape) return null;
+              
+              // Calculate bounding box for the individual shape
+              let shapeX, shapeY, shapeWidth, shapeHeight;
+              
+              if (individualShape.type === 'circle') {
+                const radius = individualShape.radius || individualShape.width / 2;
+                shapeX = individualShape.x - radius;
+                shapeY = individualShape.y - radius;
+                shapeWidth = radius * 2;
+                shapeHeight = radius * 2;
+              } else {
+                shapeX = individualShape.x;
+                shapeY = individualShape.y;
+                shapeWidth = individualShape.width;
+                shapeHeight = individualShape.height;
+              }
+              
+              return (
+                <Group>
+                  {/* Individual shape selection box - solid purple */}
+                  <Rect
+                    x={shapeX}
+                    y={shapeY}
+                    width={shapeWidth}
+                    height={shapeHeight}
+                    fill="rgba(139, 92, 246, 0.1)" // Light purple background
+                    stroke="#8b5cf6" // Purple border
+                    strokeWidth={3} // Thick border
+                    listening={false}
+                  />
+                  
+                  {/* Individual shape resize handles */}
+                  {[
+                    { x: shapeX, y: shapeY }, // Top-left
+                    { x: shapeX + shapeWidth/2, y: shapeY }, // Top-center
+                    { x: shapeX + shapeWidth, y: shapeY }, // Top-right
+                    { x: shapeX, y: shapeY + shapeHeight/2 }, // Left-center
+                    { x: shapeX + shapeWidth, y: shapeY + shapeHeight/2 }, // Right-center
+                    { x: shapeX, y: shapeY + shapeHeight }, // Bottom-left
+                    { x: shapeX + shapeWidth/2, y: shapeY + shapeHeight }, // Bottom-center
+                    { x: shapeX + shapeWidth, y: shapeY + shapeHeight }, // Bottom-right
+                  ].map((handle, index) => (
+                    <Rect
+                      key={`individual-handle-${index}`}
+                      x={handle.x - 4}
+                      y={handle.y - 4}
+                      width={8}
+                      height={8}
+                      fill="white"
+                      stroke="#8b5cf6"
+                      strokeWidth={2}
+                      cornerRadius={2}
+                      listening={false}
+                    />
+                  ))}
                 </Group>
               );
             })()}

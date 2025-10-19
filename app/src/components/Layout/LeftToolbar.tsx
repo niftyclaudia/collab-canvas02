@@ -44,13 +44,17 @@ export function LeftToolbar() {
     selectedColor, 
     setSelectedColor,
     selectedShapes,
+    setSelectedShapes,
+    shapes,
     selectedTextFormatting,
     applyBoldFormatting,
     applyItalicFormatting,
     applyUnderlineFormatting,
     applyFontSizeFormatting,
     clearCanvas,
-    editingTextId
+    editingTextId,
+    groupShapes,
+    ungroupShapes
   } = useCanvas();
 
   const { user } = useAuth();
@@ -130,6 +134,42 @@ export function LeftToolbar() {
   // Handle unlock placeholder
   const handleUnlock = () => {
     showToast('Unlock feature coming soon', 'info');
+  };
+
+  // Handle group action
+  const handleGroup = async () => {
+    if (selectedShapes.length < 2) return;
+    
+    try {
+      await groupShapes(selectedShapes);
+    } catch (error) {
+      console.error('Failed to group shapes:', error);
+      // Error handling is done in the context
+    }
+  };
+
+  // Handle ungroup action
+  const handleUngroup = async () => {
+    if (selectedShapes.length === 0) {
+      showToast('No shapes selected to ungroup', 'error');
+      return;
+    }
+    
+    // Find the group ID from the first selected shape
+    const firstSelectedShape = shapes.find(s => s.id === selectedShapes[0]);
+    if (!firstSelectedShape || !firstSelectedShape.groupId) {
+      showToast('Selected shapes are not in a group', 'error');
+      return;
+    }
+    
+    try {
+      await ungroupShapes(firstSelectedShape.groupId);
+      // Clear selection after ungrouping
+      setSelectedShapes([]);
+    } catch (error) {
+      console.error('Failed to ungroup shapes:', error);
+      // Error handling is done in the context
+    }
   };
 
   // Handle clear canvas
@@ -324,23 +364,71 @@ export function LeftToolbar() {
           >
             <span style={{fontSize: '18px'}}>📋</span>
           </button>
-          <button
-            type="button"
-            className="toolbar-icon-button disabled"
-            onClick={handleLock}
-            title="Lock feature coming soon"
-          >
-            <span style={{fontSize: '18px'}}>🔒</span>
-          </button>
-          <button
-            type="button"
-            className="toolbar-icon-button disabled"
-            onClick={handleUnlock}
-            title="Unlock feature coming soon"
-          >
-            <span style={{fontSize: '18px'}}>🔓</span>
-          </button>
         </div>
+
+        {/* Section 6: Grouping Tools */}
+        {(() => {
+          // Check if selected shapes are in a group
+          const selectedShapesInGroup = selectedShapes.filter(shapeId => {
+            const shape = shapes.find(s => s.id === shapeId);
+            return shape && shape.groupId;
+          });
+          
+          // Check if ALL selected shapes are in the same group
+          const allShapesInSameGroup = selectedShapes.length > 0 && 
+            selectedShapesInGroup.length === selectedShapes.length &&
+            selectedShapesInGroup.length > 0;
+          
+          // Get the group ID to verify all shapes are in the same group
+          let allInSameGroup = false;
+          if (allShapesInSameGroup) {
+            const firstShape = shapes.find(s => s.id === selectedShapes[0]);
+            const groupId = firstShape?.groupId;
+            allInSameGroup = Boolean(groupId && selectedShapes.every(shapeId => {
+              const shape = shapes.find(s => s.id === shapeId);
+              return shape && shape.groupId === groupId;
+            }));
+          }
+          
+          const canGroup = selectedShapes.length >= 2 && !allInSameGroup;
+          const canUngroup = allInSameGroup;
+          
+          console.log('LeftToolbar grouping logic:', {
+            selectedShapes,
+            selectedShapesInGroup: selectedShapesInGroup.length,
+            allShapesInSameGroup,
+            allInSameGroup,
+            canGroup,
+            canUngroup
+          });
+          
+          if (!canGroup && !canUngroup) return null;
+          
+          return (
+            <div className="toolbar-section">
+              {canGroup && (
+                <button
+                  type="button"
+                  className="toolbar-icon-button"
+                  onClick={handleGroup}
+                  title="Group selected shapes (Cmd/Ctrl+G)"
+                >
+                  <span style={{fontSize: '18px'}}>🔒</span>
+                </button>
+              )}
+              {canUngroup && (
+                <button
+                  type="button"
+                  className="toolbar-icon-button"
+                  onClick={handleUngroup}
+                  title="Ungroup selected shapes (Cmd/Ctrl+Shift+G)"
+                >
+                  <span style={{fontSize: '18px'}}>🔓</span>
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="toolbar-divider"></div>
 
