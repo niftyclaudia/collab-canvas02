@@ -2,6 +2,7 @@ import { useCanvas } from '../../hooks/useCanvas';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../hooks/useAuth';
 import { canvasService } from '../../services/canvasService';
+import { AI_COLOR_PALETTE } from '../../utils/constants';
 // Custom SVG Icon Components
 
 const SquareIcon = ({ size = 20, color = "currentColor" }) => (
@@ -102,13 +103,7 @@ export function LeftToolbar({}: LeftToolbarProps) {
   const { user } = useAuth();
   const { showToast } = useToast();
 
-  const colors = [
-    { name: 'Blue', value: '#3b82f6' },
-    { name: 'Green', value: '#10b981' },
-    { name: 'Orange', value: '#f97316' },
-    { name: 'Purple', value: '#8b5cf6' },
-    { name: 'Pink', value: '#ec4899' },
-  ];
+  const colors = AI_COLOR_PALETTE;
 
   const shapeTools = [
     { 

@@ -105,6 +105,67 @@ export class CanvasService {
   }
 
   /**
+   * Create multiple shapes in a batch operation for better performance
+   */
+  async createShapesBatch(shapesData: CreateShapeData[]): Promise<Shape[]> {
+    try {
+      if (shapesData.length === 0) return [];
+      
+      // Validate all shapes first
+      for (const shapeData of shapesData) {
+        if (shapeData.type === 'circle') {
+          if (!this.validateCircleBounds(shapeData.x, shapeData.y, shapeData.radius || 0)) {
+            throw new Error(`Circle would be outside canvas bounds (canvas: ${CANVAS_WIDTH}x${CANVAS_HEIGHT})`);
+          }
+        } else {
+          if (!this.validateShapeBounds(shapeData.x, shapeData.y, shapeData.width, shapeData.height)) {
+            throw new Error(`Shape would be outside canvas bounds (canvas: ${CANVAS_WIDTH}x${CANVAS_HEIGHT})`);
+          }
+        }
+      }
+
+      // Get current z-index range to assign new z-indexes
+      const zIndexRange = await this.getZIndexRange();
+      const now = serverTimestamp() as Timestamp;
+      
+      // Create batch operation
+      const batch = writeBatch(firestore);
+      const shapes: Shape[] = [];
+      
+      shapesData.forEach((shapeData, index) => {
+        const shapeId = this.generateShapeId();
+        const newZIndex = zIndexRange.max + 1 + index;
+        
+        const shape: Omit<Shape, 'id'> = {
+          ...shapeData,
+          rotation: shapeData.rotation ?? 0,
+          zIndex: shapeData.zIndex ?? newZIndex,
+          createdAt: now,
+          updatedAt: now,
+          lockedBy: null,
+          lockedAt: null,
+        };
+
+        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+        batch.set(shapeDocRef, shape);
+        
+        shapes.push({
+          id: shapeId,
+          ...shape,
+        } as Shape);
+      });
+
+      // Commit all shapes in a single batch operation
+      await batch.commit();
+      
+      return shapes;
+    } catch (error) {
+      console.error('❌ Error creating shapes batch:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Create a new shape in Firestore
    */
   async createShape(shapeData: CreateShapeData): Promise<Shape> {

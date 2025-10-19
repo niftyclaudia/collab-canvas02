@@ -9,25 +9,36 @@ export const DEFAULT_ZOOM = 1;
 
 // Color palette for cursor colors
 export const CURSOR_COLORS = [
-  '#ef4444', // Red
-  '#3b82f6', // Blue  
+  '#3b82f6', // Blue
   '#10b981', // Green
-  '#f59e0b', // Yellow
+  '#f97316', // Orange
+  '#8b5cf6', // Purple
+  '#ec4899', // Pink
 ] as const;
 
 // Default color for shapes
 export const DEFAULT_SHAPE_COLOR = '#3b82f6'; // Blue
 
-// Color palette for shapes (toolbar colors)
+// Color palette for shapes (toolbar colors) - matches LeftToolbar
 export const SHAPE_COLORS = {
-  RED: '#ef4444',
-  BLUE: '#3b82f6', 
+  BLUE: '#3b82f6',
   GREEN: '#10b981',
-  YELLOW: '#f59e0b',
+  ORANGE: '#f97316',
+  PURPLE: '#8b5cf6',
+  PINK: '#ec4899',
 } as const;
 
 // Shape color array for easier iteration in toolbar
 export const SHAPE_COLOR_VALUES = Object.values(SHAPE_COLORS);
+
+// Color palette for AI agent (matches toolbar colors)
+export const AI_COLOR_PALETTE = [
+  { name: 'Blue', value: '#3b82f6' },
+  { name: 'Green', value: '#10b981' },
+  { name: 'Orange', value: '#f97316' },
+  { name: 'Purple', value: '#8b5cf6' },
+  { name: 'Pink', value: '#ec4899' },
+] as const;
 
 // Shape size constraints
 export const MIN_SHAPE_WIDTH = 10;

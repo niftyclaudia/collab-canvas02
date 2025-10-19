@@ -48,7 +48,7 @@ export class AIService {
         tools: this.getToolDefinitions(),
         tool_choice: "required", // Force the AI to use tools
         temperature: 0.1,
-        max_tokens: 500
+        max_tokens: 2000
       });
       
       const message = response.choices[0].message;
@@ -177,16 +177,26 @@ export class AIService {
     return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
   
-  private async executeToolCalls(toolCalls: any[], userId: string) {
-    const results = [];
-    for (const call of toolCalls) {
+  private async executeToolCalls(toolCalls: any[], userId: string): Promise<any[]> {
+    // Check if we have multiple shape creation calls that can be batched
+    const createShapeCalls = toolCalls.filter(call => 
+      ['createRectangle', 'createCircle', 'createTriangle'].includes(call.function.name)
+    );
+    
+    if (createShapeCalls.length > 1) {
+      // Use batch creation for multiple shapes
+      return await this.executeBatchShapeCreation(createShapeCalls, toolCalls, userId);
+    }
+    
+    // Execute tool calls in parallel for better performance
+    const promises = toolCalls.map(async (call) => {
       try {
         const result = await this.executeSingleTool(call, userId);
-        results.push({
+        return {
           tool: call.function.name,
           success: true,
           result: result
-        });
+        };
       } catch (error: any) {
         // Show toast notification for any object creation/modification error
         if (this.onError && this.isObjectModificationTool(call.function.name)) {
@@ -206,14 +216,140 @@ export class AIService {
           this.onError(errorMessage);
         }
         
-        results.push({
+        return {
           tool: call.function.name,
           success: false,
           error: error.message
-        });
+        };
       }
-    }
+    });
+    
+    // Wait for all tool calls to complete in parallel
+    const results = await Promise.all(promises);
     return results;
+  }
+  
+  private async executeBatchShapeCreation(createShapeCalls: any[], allToolCalls: any[], userId: string): Promise<any[]> {
+    try {
+      // Convert tool calls to shape data
+      const shapesData = createShapeCalls.map(call => {
+        const args = JSON.parse(call.function.arguments);
+        const { name } = call.function;
+        
+        if (name === 'createRectangle') {
+          return {
+            type: 'rectangle' as const,
+            x: args.x,
+            y: args.y,
+            width: args.width,
+            height: args.height,
+            color: args.color,
+            rotation: 0,
+            createdBy: userId
+          };
+        } else if (name === 'createCircle') {
+          return {
+            type: 'circle' as const,
+            x: args.x,
+            y: args.y,
+            width: args.radius * 2,
+            height: args.radius * 2,
+            radius: args.radius,
+            color: args.color,
+            rotation: 0,
+            createdBy: userId
+          };
+        } else if (name === 'createTriangle') {
+          return {
+            type: 'triangle' as const,
+            x: args.x,
+            y: args.y,
+            width: args.width,
+            height: args.height,
+            color: args.color,
+            rotation: 0,
+            createdBy: userId
+          };
+        }
+        return null;
+      }).filter((shape): shape is NonNullable<typeof shape> => shape !== null);
+      
+      // Create all shapes in a single batch operation
+      const createdShapes = await this.canvasService.createShapesBatch(shapesData);
+      
+      // Execute remaining tool calls in parallel
+      const otherCalls = allToolCalls.filter(call => 
+        !['createRectangle', 'createCircle', 'createTriangle'].includes(call.function.name)
+      );
+      
+      const otherResults = otherCalls.length > 0 
+        ? await Promise.all(otherCalls.map(async (call) => {
+            try {
+              const result = await this.executeSingleTool(call, userId);
+              return {
+                tool: call.function.name,
+                success: true,
+                result: result
+              };
+            } catch (error: any) {
+              return {
+                tool: call.function.name,
+                success: false,
+                error: error.message
+              };
+            }
+          }))
+        : [];
+      
+      // Combine results
+      const batchResults = createShapeCalls.map((call, index) => ({
+        tool: call.function.name,
+        success: true,
+        result: createdShapes[index]
+      }));
+      
+      return [...batchResults, ...otherResults];
+    } catch (error: any) {
+      // If batch fails, fall back to individual creation
+      console.warn('Batch creation failed, falling back to individual creation:', error);
+      return await this.executeToolCalls(allToolCalls, userId);
+    }
+  }
+  
+  private async createMultipleShapes(args: any, userId: string) {
+    const { count, shapeType, startX, startY, gridColumns, spacing, shapeWidth, shapeHeight, colors } = args;
+    
+    // Calculate grid positions
+    const shapesData = [];
+    for (let i = 0; i < count; i++) {
+      const row = Math.floor(i / gridColumns);
+      const col = i % gridColumns;
+      
+      const x = startX + (col * (shapeWidth + spacing));
+      const y = startY + (row * (shapeHeight + spacing));
+      const color = colors[i % colors.length];
+      
+      const shapeData: any = {
+        type: shapeType,
+        x,
+        y,
+        width: shapeWidth,
+        height: shapeHeight,
+        color,
+        rotation: 0,
+        createdBy: userId
+      };
+      
+      // Add radius for circles
+      if (shapeType === 'circle') {
+        shapeData.radius = shapeWidth / 2;
+      }
+      
+      shapesData.push(shapeData);
+    }
+    
+    // Create all shapes in a single batch operation
+    return await this.canvasService.createShapesBatch(shapesData);
   }
   
   private async executeSingleTool(call: any, userId: string) {
@@ -223,6 +359,9 @@ export class AIService {
     logger.debug(LogCategory.AI, `Parsed args: ${JSON.stringify(args)}`);
     
     switch (name) {
+      case 'createMultipleShapes':
+        return await this.createMultipleShapes(args, userId);
+        
       case 'createRectangle':
         return await this.canvasService.createShape({
           type: 'rectangle',
@@ -534,6 +673,28 @@ export class AIService {
   
   private getToolDefinitions() {
     return [
+      {
+        type: "function" as const,
+        function: {
+          name: "createMultipleShapes",
+          description: "Creates multiple shapes efficiently in a single operation. Use this for creating 5+ shapes at once.",
+          parameters: {
+            type: "object",
+            properties: {
+              count: { type: "number", description: "Number of shapes to create" },
+              shapeType: { type: "string", enum: ["rectangle", "circle", "triangle"], description: "Type of shapes to create" },
+              startX: { type: "number", description: "Starting X position for grid layout" },
+              startY: { type: "number", description: "Starting Y position for grid layout" },
+              gridColumns: { type: "number", description: "Number of columns in grid layout" },
+              spacing: { type: "number", description: "Spacing between shapes in pixels" },
+              shapeWidth: { type: "number", description: "Width of each shape" },
+              shapeHeight: { type: "number", description: "Height of each shape" },
+              colors: { type: "array", items: { type: "string" }, description: "Array of colors to use (will cycle through)" }
+            },
+            required: ["count", "shapeType", "startX", "startY", "gridColumns", "spacing", "shapeWidth", "shapeHeight", "colors"]
+          }
+        }
+      },
       {
         type: "function" as const,
         function: {
