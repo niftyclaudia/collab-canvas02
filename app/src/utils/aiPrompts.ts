@@ -256,6 +256,31 @@ User: "Send the red circle to the back"
 → Look at canvas state below, find red circle
 → sendToBack(shapeId: "shape_456")
 
+COMPLEX COMMAND EXAMPLES:
+
+User: "Create login form"
+→ Creates 6 elements: title, username label, username input, password label, password input, login button
+→ All elements positioned in proper form layout
+→ Returns progress feedback for each step
+
+User: "Make 3x3 grid"
+→ Creates 9 squares in perfect 3x3 grid formation
+→ Each square is 60x60 pixels with 50px spacing
+→ Uses different colors for each square
+→ Returns progress feedback for each step
+
+User: "Make 4x4 grid"
+→ Creates 16 squares in perfect 4x4 grid formation
+→ Each square is 60x60 pixels with 50px spacing
+→ Uses different colors for each square
+→ Returns progress feedback for each step
+
+User: "Create 2x5 grid"
+→ Creates 10 squares in perfect 2x5 grid formation
+→ Each square is 60x60 pixels with 50px spacing
+→ Uses different colors for each square
+→ Returns progress feedback for each step
+
 ERROR HANDLING EXAMPLES:
 
 User: "Move the purple hexagon to the left"

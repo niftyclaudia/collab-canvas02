@@ -11,6 +11,15 @@ interface CommandResult {
   toolCalls: any[];
 }
 
+interface ComplexCommandResult {
+  success: boolean;
+  stepsCompleted: number;
+  totalSteps: number;
+  createdShapes: string[];
+  errors: string[];
+  message: string;
+}
+
 interface AIServiceOptions {
   onError?: (message: string) => void;
   onSuccess?: (message: string) => void;
@@ -211,6 +220,303 @@ export class AIService {
    */
   private generateMessageId(): string {
     return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Execute complex multi-step AI commands with progress feedback
+   * @param command The complex command to execute
+   * @param userId The user ID
+   * @param context Optional canvas state context
+   * @returns Promise<ComplexCommandResult>
+   */
+  async executeComplexCommand(
+    command: string, 
+    userId: string, 
+    context?: any
+  ): Promise<ComplexCommandResult> {
+    try {
+      const lowerCommand = command.toLowerCase();
+      
+      // Check for specific complex commands
+      if (lowerCommand.includes('create login form') || lowerCommand.includes('login form')) {
+        return await this.createLoginForm(userId);
+      }
+      
+      if (lowerCommand.includes('make 3x3 grid') || lowerCommand.includes('3x3 grid') || 
+          lowerCommand.includes('create 3x3 grid')) {
+        return await this.createGrid(userId, 3, 3, 50);
+      }
+      
+      if (lowerCommand.includes('make') && lowerCommand.includes('grid')) {
+        // Parse grid dimensions from command
+        const gridMatch = command.match(/(\d+)x(\d+)\s+grid/);
+        if (gridMatch) {
+          const rows = parseInt(gridMatch[1]);
+          const cols = parseInt(gridMatch[2]);
+          return await this.createGrid(userId, rows, cols, 50);
+        }
+      }
+      
+      // Fallback to regular command execution
+      const result = await this.executeCommand(command, userId);
+      return {
+        success: result.success,
+        stepsCompleted: result.success ? 1 : 0,
+        totalSteps: 1,
+        createdShapes: result.toolCalls.filter(tc => tc.success).map(tc => tc.result?.id).filter(Boolean),
+        errors: result.success ? [] : [result.message],
+        message: result.message
+      };
+    } catch (error: any) {
+      console.error('Complex command execution error:', error);
+      return {
+        success: false,
+        stepsCompleted: 0,
+        totalSteps: 1,
+        createdShapes: [],
+        errors: [error.message || 'Unknown error'],
+        message: `❌ Failed to execute complex command: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Create a login form with 6 properly positioned elements
+   * @param userId The user ID
+   * @param position Optional position for the form
+   * @returns Promise<ComplexCommandResult>
+   */
+  async createLoginForm(userId: string, position?: {x: number, y: number}): Promise<ComplexCommandResult> {
+    const startX = position?.x || 2000;
+    const startY = position?.y || 2000;
+    const createdShapes: string[] = [];
+    const errors: string[] = [];
+    let stepsCompleted = 0;
+    const totalSteps = 6;
+
+    try {
+      // Step 1: Create title
+      try {
+        const title = await this.canvasService.createText(
+          'Login Form',
+          startX,
+          startY,
+          24,
+          '#000000',
+          'bold',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(title.id);
+        stepsCompleted++;
+        console.log('✅ Step 1: Created title');
+      } catch (error: any) {
+        errors.push(`Failed to create title: ${error.message}`);
+        console.error('❌ Step 1 failed:', error);
+      }
+
+      // Step 2: Create username label
+      try {
+        const usernameLabel = await this.canvasService.createText(
+          'Username:',
+          startX,
+          startY + 60,
+          16,
+          '#000000',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(usernameLabel.id);
+        stepsCompleted++;
+        console.log('✅ Step 2: Created username label');
+      } catch (error: any) {
+        errors.push(`Failed to create username label: ${error.message}`);
+        console.error('❌ Step 2 failed:', error);
+      }
+
+      // Step 3: Create username input
+      try {
+        const usernameInput = await this.canvasService.createRectangle(
+          startX + 100,
+          startY + 55,
+          200,
+          30,
+          '#ffffff',
+          userId
+        );
+        createdShapes.push(usernameInput.id);
+        stepsCompleted++;
+        console.log('✅ Step 3: Created username input');
+      } catch (error: any) {
+        errors.push(`Failed to create username input: ${error.message}`);
+        console.error('❌ Step 3 failed:', error);
+      }
+
+      // Step 4: Create password label
+      try {
+        const passwordLabel = await this.canvasService.createText(
+          'Password:',
+          startX,
+          startY + 120,
+          16,
+          '#000000',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(passwordLabel.id);
+        stepsCompleted++;
+        console.log('✅ Step 4: Created password label');
+      } catch (error: any) {
+        errors.push(`Failed to create password label: ${error.message}`);
+        console.error('❌ Step 4 failed:', error);
+      }
+
+      // Step 5: Create password input
+      try {
+        const passwordInput = await this.canvasService.createRectangle(
+          startX + 100,
+          startY + 115,
+          200,
+          30,
+          '#ffffff',
+          userId
+        );
+        createdShapes.push(passwordInput.id);
+        stepsCompleted++;
+        console.log('✅ Step 5: Created password input');
+      } catch (error: any) {
+        errors.push(`Failed to create password input: ${error.message}`);
+        console.error('❌ Step 5 failed:', error);
+      }
+
+      // Step 6: Create login button
+      try {
+        const loginButton = await this.canvasService.createRectangle(
+          startX + 50,
+          startY + 180,
+          100,
+          40,
+          '#3b82f6',
+          userId
+        );
+        createdShapes.push(loginButton.id);
+        stepsCompleted++;
+        console.log('✅ Step 6: Created login button');
+      } catch (error: any) {
+        errors.push(`Failed to create login button: ${error.message}`);
+        console.error('❌ Step 6 failed:', error);
+      }
+
+      const success = stepsCompleted === totalSteps;
+      const message = success 
+        ? `✅ Login form created with ${stepsCompleted} elements`
+        : `⚠️ Login form partially created: ${stepsCompleted}/${totalSteps} elements (${errors.length} errors)`;
+
+      return {
+        success,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors,
+        message
+      };
+
+    } catch (error: any) {
+      console.error('❌ Login form creation failed:', error);
+      return {
+        success: false,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors: [...errors, `Login form creation failed: ${error.message}`],
+        message: `❌ Failed to create login form: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Create a grid of shapes
+   * @param userId The user ID
+   * @param rows Number of rows
+   * @param cols Number of columns
+   * @param spacing Spacing between shapes
+   * @param position Optional position for the grid
+   * @returns Promise<ComplexCommandResult>
+   */
+  async createGrid(
+    userId: string, 
+    rows: number, 
+    cols: number, 
+    spacing: number,
+    position?: {x: number, y: number}
+  ): Promise<ComplexCommandResult> {
+    const startX = position?.x || 2000;
+    const startY = position?.y || 2000;
+    const createdShapes: string[] = [];
+    const errors: string[] = [];
+    let stepsCompleted = 0;
+    const totalSteps = rows * cols;
+
+    try {
+      const shapeSize = 60;
+      const colors = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899'];
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          try {
+            const x = startX + (col * (shapeSize + spacing));
+            const y = startY + (row * (shapeSize + spacing));
+            const color = colors[(row * cols + col) % colors.length];
+
+            const shape = await this.canvasService.createRectangle(
+              x,
+              y,
+              shapeSize,
+              shapeSize,
+              color,
+              userId
+            );
+            
+            createdShapes.push(shape.id);
+            stepsCompleted++;
+            console.log(`✅ Step ${stepsCompleted}: Created shape at (${x}, ${y})`);
+          } catch (error: any) {
+            errors.push(`Failed to create shape at row ${row}, col ${col}: ${error.message}`);
+            console.error(`❌ Step ${stepsCompleted + 1} failed:`, error);
+          }
+        }
+      }
+
+      const success = stepsCompleted === totalSteps;
+      const message = success 
+        ? `✅ ${rows}x${cols} grid created with ${stepsCompleted} shapes`
+        : `⚠️ Grid partially created: ${stepsCompleted}/${totalSteps} shapes (${errors.length} errors)`;
+
+      return {
+        success,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors,
+        message
+      };
+
+    } catch (error: any) {
+      console.error('❌ Grid creation failed:', error);
+      return {
+        success: false,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors: [...errors, `Grid creation failed: ${error.message}`],
+        message: `❌ Failed to create grid: ${error.message}`
+      };
+    }
   }
   
   private async executeToolCalls(toolCalls: any[], userId: string): Promise<any[]> {
