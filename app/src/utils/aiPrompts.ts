@@ -1,13 +1,20 @@
-export function getSystemPrompt(shapes: any[]): string {
+export function getSystemPrompt(shapes: any[], groups: any[] = []): string {
   const shapesSummary = shapes.length > 0 
     ? `\n\nCURRENT CANVAS STATE (ordered by most recently modified first):\n${shapes.slice(0, 20).map((s, index) => 
         `${index === 0 ? '→ MOST RECENTLY MODIFIED: ' : ''}- ${s.type} (id: ${s.id}): ${s.color || 'text'} at (${s.x}, ${s.y})${
           s.width ? `, size ${s.width}×${s.height}` : ''
         }${s.radius ? `, radius ${s.radius}` : ''
         }${s.rotation ? `, rotation ${s.rotation}°` : ''
-        }${s.text ? `, text: "${s.text}"` : ''}`
+        }${s.text ? `, text: "${s.text}"` : ''
+        }${s.groupId ? `, grouped in: ${s.groupId}` : ''}`
       ).join('\n')}${shapes.length > 20 ? `\n... and ${shapes.length - 20} more shapes` : ''}`
     : '\n\nCURRENT CANVAS STATE: Empty canvas';
+  
+  const groupsSummary = groups.length > 0 
+    ? `\n\nCURRENT GROUPS:\n${groups.map(g => 
+        `- Group ${g.id} (${g.name || 'Unnamed'}): ${g.shapeIds.length} shapes [${g.shapeIds.join(', ')}]`
+      ).join('\n')}`
+    : '\n\nCURRENT GROUPS: No groups';
   
   return `You are a canvas manipulation assistant for a 5000×5000 pixel collaborative design tool. Users give you natural language commands to create and modify shapes.
 
@@ -140,6 +147,52 @@ User: "Delete that"
 → Look at canvas state below, use the FIRST shape (most recently modified)
 → deleteShape(shapeId: "shape_456")
 
+LAYOUT COMMAND EXAMPLES:
+
+User: "Arrange these shapes in a row"
+→ Look at canvas state below, identify selected shapes (usually the most recently modified ones)
+→ arrangeShapesInRow(shapeIds: ["shape_123", "shape_456", "shape_789"])
+
+User: "Arrange the blue rectangle and red circle in a row"
+→ Look at canvas state below, find blue rectangle and red circle
+→ arrangeShapesInRow(shapeIds: ["shape_123", "shape_456"])
+
+User: "Space these elements evenly"
+→ Look at canvas state below, identify selected shapes
+→ spaceShapesEvenly(shapeIds: ["shape_123", "shape_456", "shape_789"], direction: "horizontal")
+
+User: "Align these shapes to the left"
+→ Look at canvas state below, identify selected shapes
+→ alignShapes(shapeIds: ["shape_123", "shape_456"], alignment: "left")
+
+User: "Center align the blue rectangle and red circle"
+→ Look at canvas state below, find blue rectangle and red circle
+→ alignShapes(shapeIds: ["shape_123", "shape_456"], alignment: "center")
+
+User: "Group these shapes"
+→ Look at canvas state below, identify selected shapes
+→ groupShapes(shapeIds: ["shape_123", "shape_456", "shape_789"], name: "Group 3")
+
+User: "Ungroup the shapes"
+→ Look at canvas state below, find grouped shapes
+→ ungroupShapes(groupId: "group_123")
+
+User: "Ungroup this group"
+→ Look at canvas state below, find the group ID from the groups list
+→ ungroupShapes(groupId: "group_456")
+
+User: "Break up the group"
+→ Look at canvas state below, find the group ID from the groups list
+→ ungroupShapes(groupId: "group_789")
+
+User: "Bring the blue rectangle to the front"
+→ Look at canvas state below, find blue rectangle
+→ bringToFront(shapeId: "shape_123")
+
+User: "Send the red circle to the back"
+→ Look at canvas state below, find red circle
+→ sendToBack(shapeId: "shape_456")
+
 ERROR HANDLING EXAMPLES:
 
 User: "Move the purple hexagon to the left"
@@ -175,5 +228,5 @@ User: "Rotate the blue one 45 degrees"
 
 Be helpful, accurate, and execute commands precisely. Always validate parameters are within bounds before executing.
 
-IMPORTANT: You MUST use the available tools to execute commands. Do not just describe what you would do - actually call the appropriate tool function with the correct parameters.${shapesSummary}`;
+IMPORTANT: You MUST use the available tools to execute commands. Do not just describe what you would do - actually call the appropriate tool function with the correct parameters.${shapesSummary}${groupsSummary}`;
 }

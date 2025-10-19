@@ -198,6 +198,30 @@ export class CanvasService {
   }
 
   /**
+   * Get all groups from Firestore (one-time read)
+   */
+  async getGroups(): Promise<Group[]> {
+    try {
+      const groupsCollectionRef = collection(firestore, 'canvases/main/groups');
+      const groupsQuery = query(groupsCollectionRef, orderBy('updatedAt', 'desc'));
+      const querySnapshot = await getDocs(groupsQuery);
+
+      const groups: Group[] = [];
+      querySnapshot.forEach((doc) => {
+        groups.push({
+          id: doc.id,
+          ...doc.data(),
+        } as Group);
+      });
+
+      return groups;
+    } catch (error) {
+      console.error('❌ Error fetching groups:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Subscribe to real-time shape updates
    * Returns unsubscribe function
    */
@@ -1455,6 +1479,63 @@ export class CanvasService {
       await this.updateShape(nextLowerShape.id, { zIndex: currentZIndex });
     } catch (error) {
       console.error('❌ Error sending shape backward:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update multiple shape positions in a batch operation
+   * @param updates - Array of position updates with shape ID and new coordinates
+   */
+  async updateShapePositions(updates: Array<{id: string, x: number, y: number}>): Promise<void> {
+    try {
+      if (!updates || updates.length === 0) {
+        throw new Error('No position updates provided');
+      }
+
+      // Use batch write for atomic updates
+      const batch = writeBatch(firestore);
+      const now = serverTimestamp() as Timestamp;
+      
+      updates.forEach(update => {
+        const shapeDocRef = doc(firestore, this.shapesCollectionPath, update.id);
+        batch.update(shapeDocRef, {
+          x: update.x,
+          y: update.y,
+          updatedAt: now,
+        });
+      });
+      
+      await batch.commit();
+    } catch (error) {
+      console.error('❌ Error updating shape positions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get shape bounds for layout calculations
+   * @param shapeId - The shape ID
+   * @returns Shape bounds with x, y, width, height
+   */
+  async getShapeBounds(shapeId: string): Promise<{x: number, y: number, width: number, height: number}> {
+    try {
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const shapeData = shapeDoc.data() as Shape;
+      return {
+        x: shapeData.x,
+        y: shapeData.y,
+        width: shapeData.width,
+        height: shapeData.height
+      };
+    } catch (error) {
+      console.error('❌ Error getting shape bounds:', error);
       throw error;
     }
   }

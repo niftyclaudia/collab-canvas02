@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { CanvasService } from './canvasService';
 import { getSystemPrompt } from '../utils/aiPrompts';
 import { logger, LogCategory } from '../utils/logger';
+import { calculateRowLayout, calculateAlignment, calculateEvenSpacing } from '../utils/layoutCalculator';
 import type { ChatMessage } from '../types/chat';
 
 interface CommandResult {
@@ -35,12 +36,13 @@ export class AIService {
     try {
       // 1. Get current canvas state for context
       const shapes = await this.canvasService.getShapes();
+      const groups = await this.canvasService.getGroups();
       
       // 2. Call OpenAI with function tools
       const response = await this.openai.chat.completions.create({
         model: "gpt-4-turbo-preview",
         messages: [
-          { role: "system", content: getSystemPrompt(shapes) },
+          { role: "system", content: getSystemPrompt(shapes, groups) },
           { role: "user", content: prompt }
         ],
         tools: this.getToolDefinitions(),
@@ -270,8 +272,8 @@ export class AIService {
       // NEW MANIPULATION TOOLS
       case 'moveShape':
         // Get the current shape to determine its type and dimensions
-        const shapes = await this.canvasService.getShapes();
-        const targetShape = shapes.find(s => s.id === args.shapeId);
+        const moveShapes = await this.canvasService.getShapes();
+        const targetShape = moveShapes.find(s => s.id === args.shapeId);
         
         if (!targetShape) {
           throw new Error(`Shape with ID ${args.shapeId} not found`);
@@ -320,17 +322,135 @@ export class AIService {
         return await this.canvasService.deleteShape(args.shapeId);
         
       case 'getCanvasState':
-        return await this.canvasService.getShapes();
+        const canvasShapes = await this.canvasService.getShapes();
+        const canvasGroups = await this.canvasService.getGroups();
+        return { shapes: canvasShapes, groups: canvasGroups };
+        
+      // NEW LAYOUT TOOLS
+      case 'groupShapes':
+        return await this.canvasService.groupShapes(args.shapeIds, userId, args.name);
+        
+      case 'ungroupShapes':
+        return await this.canvasService.ungroupShapes(args.groupId);
+        
+      case 'alignShapes':
+        return await this.alignShapes(args.shapeIds, args.alignment);
+        
+      case 'arrangeShapesInRow':
+        return await this.arrangeShapesInRow(args.shapeIds, args.spacing);
+        
+      case 'spaceShapesEvenly':
+        return await this.spaceShapesEvenly(args.shapeIds, args.direction);
+        
+      case 'bringToFront':
+        return await this.canvasService.bringToFront(args.shapeId);
+        
+      case 'sendToBack':
+        return await this.canvasService.sendToBack(args.shapeId);
         
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
   }
   
+  /**
+   * Align multiple shapes to a common edge or center
+   * @param shapeIds - Array of shape IDs to align
+   * @param alignment - Alignment type: 'left', 'center', 'right', 'top', 'middle', 'bottom'
+   */
+  private async alignShapes(shapeIds: string[], alignment: string): Promise<void> {
+    try {
+      // Validate input
+      if (!shapeIds || shapeIds.length < 2) {
+        throw new Error('At least 2 shapes are required for alignment');
+      }
+
+      // Get all shapes
+      const shapes = await this.canvasService.getShapes();
+      const targetShapes = shapes.filter(shape => shapeIds.includes(shape.id));
+      
+      if (targetShapes.length !== shapeIds.length) {
+        throw new Error('One or more shapes not found');
+      }
+
+      // Calculate alignment positions
+      const positions = calculateAlignment(shapeIds, shapes, alignment);
+      
+      // Update shapes with batch operation
+      await this.canvasService.updateShapePositions(positions);
+    } catch (error) {
+      console.error('❌ Error aligning shapes:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Arrange shapes in a horizontal row with equal spacing
+   * @param shapeIds - Array of shape IDs to arrange
+   * @param spacing - Spacing between shapes (default 20px)
+   */
+  private async arrangeShapesInRow(shapeIds: string[], spacing: number = 20): Promise<void> {
+    try {
+      // Validate input
+      if (!shapeIds || shapeIds.length < 2) {
+        throw new Error('At least 2 shapes are required for row arrangement');
+      }
+
+      // Get all shapes
+      const shapes = await this.canvasService.getShapes();
+      const targetShapes = shapes.filter(shape => shapeIds.includes(shape.id));
+      
+      if (targetShapes.length !== shapeIds.length) {
+        throw new Error('One or more shapes not found');
+      }
+
+      // Calculate row layout positions
+      const positions = calculateRowLayout(shapeIds, shapes, spacing);
+      
+      // Update shapes with batch operation
+      await this.canvasService.updateShapePositions(positions);
+    } catch (error) {
+      console.error('❌ Error arranging shapes in row:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Space shapes evenly in a specified direction
+   * @param shapeIds - Array of shape IDs to space
+   * @param direction - Direction of spacing: 'horizontal' or 'vertical'
+   */
+  private async spaceShapesEvenly(shapeIds: string[], direction: 'horizontal' | 'vertical'): Promise<void> {
+    try {
+      // Validate input
+      if (!shapeIds || shapeIds.length < 2) {
+        throw new Error('At least 2 shapes are required for even spacing');
+      }
+
+      // Get all shapes
+      const shapes = await this.canvasService.getShapes();
+      const targetShapes = shapes.filter(shape => shapeIds.includes(shape.id));
+      
+      if (targetShapes.length !== shapeIds.length) {
+        throw new Error('One or more shapes not found');
+      }
+
+      // Calculate even spacing positions
+      const positions = calculateEvenSpacing(shapeIds, shapes, direction);
+      
+      // Update shapes with batch operation
+      await this.canvasService.updateShapePositions(positions);
+    } catch (error) {
+      console.error('❌ Error spacing shapes evenly:', error);
+      throw error;
+    }
+  }
+  
   private isObjectModificationTool(toolName: string): boolean {
     // Check if the tool modifies objects (not just getCanvasState)
     return ['createRectangle', 'createCircle', 'createTriangle', 'createText', 
-            'moveShape', 'resizeShape', 'rotateShape', 'duplicateShape', 'deleteShape'].includes(toolName);
+            'moveShape', 'resizeShape', 'rotateShape', 'duplicateShape', 'deleteShape',
+            'groupShapes', 'ungroupShapes', 'alignShapes', 'arrangeShapesInRow', 'spaceShapesEvenly', 'bringToFront', 'sendToBack'].includes(toolName);
   }
   
   private getActionName(toolName: string): string {
@@ -343,7 +463,14 @@ export class AIService {
       'resizeShape': 'resize shape',
       'rotateShape': 'rotate shape',
       'duplicateShape': 'duplicate shape',
-      'deleteShape': 'delete shape'
+      'deleteShape': 'delete shape',
+      'groupShapes': 'group shapes',
+      'ungroupShapes': 'ungroup shapes',
+      'alignShapes': 'align shapes',
+      'arrangeShapesInRow': 'arrange shapes in row',
+      'spaceShapesEvenly': 'space shapes evenly',
+      'bringToFront': 'bring to front',
+      'sendToBack': 'send to back'
     };
     return actionMap[toolName] || 'perform action';
   }
@@ -381,6 +508,13 @@ export class AIService {
         case 'rotateShape': return '✓ Rotated shape';
         case 'duplicateShape': return '✓ Duplicated shape';
         case 'deleteShape': return '✓ Deleted shape';
+        case 'groupShapes': return '✓ Grouped shapes';
+        case 'ungroupShapes': return '✓ Ungrouped shapes';
+        case 'alignShapes': return '✓ Aligned shapes';
+        case 'arrangeShapesInRow': return '✓ Arranged shapes in row';
+        case 'spaceShapesEvenly': return '✓ Spaced shapes evenly';
+        case 'bringToFront': return '✓ Brought shape to front';
+        case 'sendToBack': return '✓ Sent shape to back';
         case 'getCanvasState': return '✓ Retrieved canvas state';
         default: return '✓ Action completed';
       }
@@ -559,6 +693,118 @@ export class AIService {
             type: "object",
             properties: {
               shapeId: { type: "string", description: "ID of the shape to delete" }
+            },
+            required: ["shapeId"]
+          }
+        }
+      },
+      
+      // NEW LAYOUT TOOLS
+      {
+        type: "function" as const,
+        function: {
+          name: "groupShapes",
+          description: "Groups multiple shapes together for collective operations. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to group" },
+              name: { type: "string", description: "Optional group name" }
+            },
+            required: ["shapeIds"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "ungroupShapes",
+          description: "Ungroups shapes by removing them from their group. MUST call getCanvasState first to find groupId.",
+          parameters: {
+            type: "object",
+            properties: {
+              groupId: { type: "string", description: "ID of the group to ungroup" }
+            },
+            required: ["groupId"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "alignShapes",
+          description: "Aligns multiple shapes to a common edge or center. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to align" },
+              alignment: { 
+                type: "string", 
+                enum: ["left", "center", "right", "top", "middle", "bottom"],
+                description: "Alignment type: left, center, right, top, middle, bottom"
+              }
+            },
+            required: ["shapeIds", "alignment"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "arrangeShapesInRow",
+          description: "Arranges selected shapes in a horizontal row with equal spacing. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to arrange" },
+              spacing: { type: "number", description: "Spacing between shapes in pixels (default 20)" }
+            },
+            required: ["shapeIds"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "spaceShapesEvenly",
+          description: "Spaces selected shapes evenly in a specified direction. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to space" },
+              direction: { 
+                type: "string", 
+                enum: ["horizontal", "vertical"],
+                description: "Direction of spacing: horizontal or vertical"
+              }
+            },
+            required: ["shapeIds", "direction"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "bringToFront",
+          description: "Brings a shape to the front (highest z-index). MUST call getCanvasState first to find shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to bring to front" }
+            },
+            required: ["shapeId"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "sendToBack",
+          description: "Sends a shape to the back (lowest z-index). MUST call getCanvasState first to find shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to send to back" }
             },
             required: ["shapeId"]
           }
