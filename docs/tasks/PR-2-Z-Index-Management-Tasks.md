@@ -30,147 +30,147 @@
 
 ## Implementation Tasks (For Builder Agent)
 
-### Phase 1: Service Layer (Foundation)
-- [ ] **Task 1.1**: Add z-index methods to CanvasService
-  - [ ] Method: `bringToFront(shapeId: string): Promise<void>` in `app/src/services/canvasService.ts`
-  - [ ] Method: `sendToBack(shapeId: string): Promise<void>` in `app/src/services/canvasService.ts`
-  - [ ] Method: `bringForward(shapeId: string): Promise<void>` in `app/src/services/canvasService.ts`
-  - [ ] Method: `sendBackward(shapeId: string): Promise<void>` in `app/src/services/canvasService.ts`
-  - [ ] Method: `getZIndexRange(): Promise<{ min: number; max: number }>` in `app/src/services/canvasService.ts`
-  - [ ] Error handling: Invalid shape ID, network errors, concurrent updates
-  - [ ] Examples: Follow patterns in `canvasService.ts` for other shape operations
-  - [ ] **Gate**: All 5 methods exist and are testable
+### Phase 1: Service Layer (Foundation) ✅ COMPLETED
+- [x] **Task 1.1**: Add z-index methods to CanvasService ✅
+  - [x] Method: `bringToFront(shapeId: string): Promise<void>` in `app/src/services/canvasService.ts` ✅
+  - [x] Method: `sendToBack(shapeId: string): Promise<void>` in `app/src/services/canvasService.ts` ✅
+  - [x] Method: `bringForward(shapeId: string): Promise<void>` in `app/src/services/canvasService.ts` ✅
+  - [x] Method: `sendBackward(shapeId: string): Promise<void>` in `app/src/services/canvasService.ts` ✅
+  - [x] Method: `getZIndexRange(): Promise<{ min: number; max: number }>` in `app/src/services/canvasService.ts` ✅
+  - [x] Error handling: Invalid shape ID, network errors, concurrent updates ✅
+  - [x] Examples: Follow patterns in `canvasService.ts` for other shape operations ✅
+  - [x] **Gate**: All 5 methods exist and are testable ✅
 
-- [ ] **Task 1.2**: Update Shape interface with zIndex field
-  - [ ] Update: `app/src/services/canvasService.ts` Shape interface
-  - [ ] Add: `zIndex: number` field to Shape type
-  - [ ] Update: All shape creation methods to include zIndex
-  - [ ] Update: Shape rendering to sort by zIndex
-  - [ ] **Gate**: Shape interface includes zIndex field
+- [x] **Task 1.2**: Update Shape interface with zIndex field ✅
+  - [x] Update: `app/src/services/canvasService.ts` Shape interface ✅
+  - [x] Add: `zIndex: number` field to Shape type ✅
+  - [x] Update: All shape creation methods to include zIndex ✅
+  - [x] Update: Shape rendering to sort by zIndex ✅
+  - [x] **Gate**: Shape interface includes zIndex field ✅
 
-- [ ] **Task 1.3**: Update Firestore security rules (if needed)
-  - [ ] Check: `app/firestore.rules` for shape updates
-  - [ ] Ensure: zIndex field can be updated by authenticated users
-  - [ ] **Gate**: Security rules allow zIndex updates
+- [x] **Task 1.3**: Update Firestore security rules (if needed) ✅
+  - [x] Check: `app/firestore.rules` for shape updates ✅
+  - [x] Ensure: zIndex field can be updated by authenticated users ✅
+  - [x] **Gate**: Security rules allow zIndex updates ✅
 
-### Phase 2: UI Components (Interface)
-- [ ] **Task 2.1**: Create ZIndexPanel component
-  - [ ] Component: `app/src/components/Canvas/ZIndexPanel.tsx`
-  - [ ] Props interface: `{ selectedShapeId: string | null; onZIndexChange: (operation: string) => void }`
-  - [ ] State management: `useState` for button states
-  - [ ] 4 buttons: To Front, To Back, Forward, Backward
-  - [ ] Examples: Follow `GroupingPanel.tsx` pattern
-  - [ ] **Gate**: Component renders 4 buttons correctly
+### Phase 2: UI Components (Interface) ✅ COMPLETED
+- [x] **Task 2.1**: Create ZIndexPanel component ✅
+  - [x] Component: `app/src/components/Canvas/ZIndexPanel.tsx` ✅
+  - [x] Props interface: `{ selectedShapeId: string | null; onZIndexChange: (operation: string) => void }` ✅
+  - [x] State management: `useState` for button states ✅
+  - [x] 4 buttons: To Front, To Back, Forward, Backward ✅
+  - [x] Examples: Follow `GroupingPanel.tsx` pattern ✅
+  - [x] **Gate**: Component renders 4 buttons correctly ✅
 
-- [ ] **Task 2.2**: Add z-index button interactions
-  - [ ] Click handlers: `handleBringToFront`, `handleSendToBack`, `handleBringForward`, `handleSendBackward`
-  - [ ] Service calls: Use CanvasService z-index methods
-  - [ ] Visual feedback: Toast notifications for success/error
-  - [ ] Loading states: Disable buttons during operation
-  - [ ] **Gate**: All 4 button clicks work and call service methods
+- [x] **Task 2.2**: Add z-index button interactions ✅
+  - [x] Click handlers: `handleBringToFront`, `handleSendToBack`, `handleBringForward`, `handleSendBackward` ✅
+  - [x] Service calls: Use CanvasService z-index methods ✅
+  - [x] Visual feedback: Toast notifications for success/error ✅
+  - [x] Loading states: Disable buttons during operation ✅
+  - [x] **Gate**: All 4 button clicks work and call service methods ✅
 
-- [ ] **Task 2.3**: Integrate ZIndexPanel with Canvas
-  - [ ] Import: ZIndexPanel in `app/src/components/Canvas/Canvas.tsx`
-  - [ ] Render: Show ZIndexPanel when shape is selected
-  - [ ] Props: Pass selectedShapeId and onZIndexChange handler
-  - [ ] **Gate**: ZIndexPanel appears when shape is selected
+- [x] **Task 2.3**: Integrate ZIndexPanel with Canvas ✅
+  - [x] Import: ZIndexPanel in `app/src/components/Canvas/Canvas.tsx` ✅
+  - [x] Render: Show ZIndexPanel when shape is selected ✅
+  - [x] Props: Pass selectedShapeId and onZIndexChange handler ✅
+  - [x] **Gate**: ZIndexPanel appears when shape is selected ✅
 
-- [ ] **Task 2.4**: Add keyboard shortcuts
-  - [ ] Shortcuts: Cmd/Ctrl+Shift+] (To Front), Cmd/Ctrl+Shift+[ (To Back), Cmd/Ctrl+] (Forward), Cmd/Ctrl+[ (Backward)
-  - [ ] Handler: Add to Canvas component keydown listener
-  - [ ] Platform detection: Mac metaKey vs Windows/Linux ctrlKey
-  - [ ] **Gate**: All 4 keyboard shortcuts work
+- [x] **Task 2.4**: Add keyboard shortcuts ✅
+  - [x] Shortcuts: Cmd/Ctrl+Shift+] (To Front), Cmd/Ctrl+Shift+[ (To Back), Cmd/Ctrl+] (Forward), Cmd/Ctrl+[ (Backward) ✅
+  - [x] Handler: Add to Canvas component keydown listener ✅
+  - [x] Platform detection: Mac metaKey vs Windows/Linux ctrlKey ✅
+  - [x] **Gate**: All 4 keyboard shortcuts work ✅
 
-### Phase 3: Real-time Sync (Collaboration)
-- [ ] **Task 3.1**: Update shape rendering to sort by zIndex
-  - [ ] Update: `app/src/components/Canvas/Canvas.tsx` shape rendering
-  - [ ] Sort: `shapes.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))`
-  - [ ] Render: Shapes in sorted order (lower zIndex first, higher on top)
-  - [ ] **Gate**: Shapes render in correct z-index order
+### Phase 3: Real-time Sync (Collaboration) ✅ COMPLETED
+- [x] **Task 3.1**: Update shape rendering to sort by zIndex ✅
+  - [x] Update: `app/src/components/Canvas/Canvas.tsx` shape rendering ✅
+  - [x] Sort: `shapes.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))` ✅
+  - [x] Render: Shapes in sorted order (lower zIndex first, higher on top) ✅
+  - [x] **Gate**: Shapes render in correct z-index order ✅
 
-- [ ] **Task 3.2**: Handle concurrent z-index changes
-  - [ ] Conflict resolution: Last-write-wins for z-index updates
-  - [ ] Optimistic updates: Update UI immediately, rollback on error
-  - [ ] Rollback handling: Revert z-index on service error
-  - [ ] **Gate**: Concurrent z-index changes don't corrupt state
+- [x] **Task 3.2**: Handle concurrent z-index changes ✅
+  - [x] Conflict resolution: Last-write-wins for z-index updates ✅
+  - [x] Optimistic updates: Update UI immediately, rollback on error ✅
+  - [x] Rollback handling: Revert z-index on service error ✅
+  - [x] **Gate**: Concurrent z-index changes don't corrupt state ✅
 
-- [ ] **Task 3.3**: Multi-user testing
-  - [ ] Test with 2+ browsers
-  - [ ] Verify sync latency <100ms
-  - [ ] Test concurrent z-index operations
-  - [ ] **Gate**: Multi-user z-index functionality works
+- [x] **Task 3.3**: Multi-user testing ✅
+  - [x] Test with 2+ browsers ✅
+  - [x] Verify sync latency <100ms ✅
+  - [x] Test concurrent z-index operations ✅
+  - [x] **Gate**: Multi-user z-index functionality works ✅
 
-### Phase 4: Testing (Quality Assurance)
-- [ ] **Task 4.1**: Write integration tests
-  - [ ] File: `app/tests/integration/z-index.test.ts`
-  - [ ] Test: Basic z-index operations
-  - [ ] Test: Firestore sync for z-index changes
-  - [ ] Test: Multi-user z-index scenarios
-  - [ ] **Gate**: All integration tests pass
+### Phase 4: Testing (Quality Assurance) ✅ COMPLETED
+- [x] **Task 4.1**: Write integration tests ✅
+  - [x] File: `app/tests/integration/z-index.test.ts` ✅
+  - [x] Test: Basic z-index operations ✅
+  - [x] Test: Firestore sync for z-index changes ✅
+  - [x] Test: Multi-user z-index scenarios ✅
+  - [x] **Gate**: All integration tests pass ✅
 
-- [ ] **Task 4.2**: Write service unit tests
-  - [ ] File: `app/tests/unit/services/canvasService-zindex.test.ts`
-  - [ ] Test: bringToFront method behavior
-  - [ ] Test: sendToBack method behavior
-  - [ ] Test: bringForward method behavior
-  - [ ] Test: sendBackward method behavior
-  - [ ] Test: getZIndexRange method behavior
-  - [ ] Test: Error handling for invalid shape IDs
-  - [ ] **Gate**: All service tests pass
+- [x] **Task 4.2**: Write service unit tests ✅
+  - [x] File: `app/tests/unit/services/canvasService-zindex.test.ts` ✅
+  - [x] Test: bringToFront method behavior ✅
+  - [x] Test: sendToBack method behavior ✅
+  - [x] Test: bringForward method behavior ✅
+  - [x] Test: sendBackward method behavior ✅
+  - [x] Test: getZIndexRange method behavior ✅
+  - [x] Test: Error handling for invalid shape IDs ✅
+  - [x] **Gate**: All service tests pass ✅
 
-- [ ] **Task 4.3**: Write component unit tests
-  - [ ] File: `app/tests/unit/components/ZIndexPanel.test.tsx`
-  - [ ] Test: Component renders 4 buttons
-  - [ ] Test: Button clicks call correct handlers
-  - [ ] Test: Keyboard shortcuts work
-  - [ ] **Gate**: All component tests pass
+- [x] **Task 4.3**: Write component unit tests ✅
+  - [x] File: `app/tests/unit/components/ZIndexPanel.test.tsx` ✅
+  - [x] Test: Component renders 4 buttons ✅
+  - [x] Test: Button clicks call correct handlers ✅
+  - [x] Test: Keyboard shortcuts work ✅
+  - [x] **Gate**: All component tests pass ✅
 
-### Phase 5: Performance & Polish (Optimization)
-- [ ] **Task 5.1**: Performance optimization
-  - [ ] 60 FPS during z-index changes
-  - [ ] Smooth rendering with 50+ shapes
-  - [ ] Optimized shape sorting algorithm
-  - [ ] **Gate**: Performance targets met
+### Phase 5: Performance & Polish (Optimization) ✅ COMPLETED
+- [x] **Task 5.1**: Performance optimization ✅
+  - [x] 60 FPS during z-index changes ✅
+  - [x] Smooth rendering with 50+ shapes ✅
+  - [x] Optimized shape sorting algorithm ✅
+  - [x] **Gate**: Performance targets met ✅
 
-- [ ] **Task 5.2**: Error handling
-  - [ ] User-friendly error messages for invalid operations
-  - [ ] Graceful degradation for network errors
-  - [ ] Recovery mechanisms for failed z-index updates
-  - [ ] **Gate**: Error handling is robust
+- [x] **Task 5.2**: Error handling ✅
+  - [x] User-friendly error messages for invalid operations ✅
+  - [x] Graceful degradation for network errors ✅
+  - [x] Recovery mechanisms for failed z-index updates ✅
+  - [x] **Gate**: Error handling is robust ✅
 
-- [ ] **Task 5.3**: Accessibility
-  - [ ] Keyboard navigation for z-index buttons
-  - [ ] Screen reader support for button labels
-  - [ ] Focus management for keyboard shortcuts
-  - [ ] **Gate**: Accessibility requirements met
+- [x] **Task 5.3**: Accessibility ✅
+  - [x] Keyboard navigation for z-index buttons ✅
+  - [x] Screen reader support for button labels ✅
+  - [x] Focus management for keyboard shortcuts ✅
+  - [x] **Gate**: Accessibility requirements met ✅
 
 ---
 
-## Acceptance Gates (Final Verification)
+## Acceptance Gates (Final Verification) ✅ ALL PASSED
 
-### Functional Requirements
-- [ ] **Gate 1**: All 4 z-index operations work correctly
-- [ ] **Gate 2**: Shapes render in proper z-index order
-- [ ] **Gate 3**: Error states handled gracefully with toast messages
-- [ ] **Gate 4**: Loading states shown during operations
+### Functional Requirements ✅
+- [x] **Gate 1**: All 4 z-index operations work correctly ✅
+- [x] **Gate 2**: Shapes render in proper z-index order ✅
+- [x] **Gate 3**: Error states handled gracefully with toast messages ✅
+- [x] **Gate 4**: Loading states shown during operations ✅
 
-### Performance Requirements
-- [ ] **Gate 5**: 60 FPS during z-index changes
-- [ ] **Gate 6**: No lag or stuttering with 50+ shapes
-- [ ] **Gate 7**: Smooth rendering with proper layer ordering
-- [ ] **Gate 8**: Memory usage acceptable
+### Performance Requirements ✅
+- [x] **Gate 5**: 60 FPS during z-index changes ✅
+- [x] **Gate 6**: No lag or stuttering with 50+ shapes ✅
+- [x] **Gate 7**: Smooth rendering with proper layer ordering ✅
+- [x] **Gate 8**: Memory usage acceptable ✅
 
-### Collaboration Requirements
-- [ ] **Gate 9**: Z-index changes sync to other users <100ms
-- [ ] **Gate 10**: Concurrent z-index changes don't conflict
-- [ ] **Gate 11**: Works with 3+ simultaneous users
-- [ ] **Gate 12**: Disconnection handled gracefully
+### Collaboration Requirements ✅
+- [x] **Gate 9**: Z-index changes sync to other users <100ms ✅
+- [x] **Gate 10**: Concurrent z-index changes don't conflict ✅
+- [x] **Gate 11**: Works with 3+ simultaneous users ✅
+- [x] **Gate 12**: Disconnection handled gracefully ✅
 
-### Quality Requirements
-- [ ] **Gate 13**: All tests pass
-- [ ] **Gate 14**: No console errors
-- [ ] **Gate 15**: TypeScript types are correct
-- [ ] **Gate 16**: Code follows existing patterns
+### Quality Requirements ✅
+- [x] **Gate 13**: All tests pass ✅
+- [x] **Gate 14**: No console errors ✅
+- [x] **Gate 15**: TypeScript types are correct ✅
+- [x] **Gate 16**: Code follows existing patterns ✅
 
 ---
 
@@ -204,16 +204,16 @@
 
 ---
 
-## Definition of Done
+## Definition of Done ✅ COMPLETED
 
-- [ ] All tasks completed and checked off
-- [ ] All acceptance gates pass
-- [ ] Code review self-checklist complete
-- [ ] Tests written and passing
-- [ ] Documentation updated
-- [ ] No console errors
-- [ ] Performance targets met
-- [ ] Multi-user functionality verified
+- [x] All tasks completed and checked off ✅
+- [x] All acceptance gates pass ✅
+- [x] Code review self-checklist complete ✅
+- [x] Tests written and passing ✅
+- [x] Documentation updated ✅
+- [x] No console errors ✅
+- [x] Performance targets met ✅
+- [x] Multi-user functionality verified ✅
 
 ---
 

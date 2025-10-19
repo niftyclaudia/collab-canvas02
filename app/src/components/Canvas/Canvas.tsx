@@ -12,6 +12,7 @@ import { canvasService } from '../../services/canvasService';
 import type { Shape } from '../../services/canvasService';
 import { logger } from '../../utils/logger';
 import TextEditorOverlay from './TextEditorOverlay';
+import FloatingToolsPanel from './FloatingToolsPanel';
 
 // Constants for rotation handles
 const ROTATION_HANDLE_DISTANCE = 150; // Distance from shape top to rotation handle
@@ -593,7 +594,6 @@ useEffect(() => {
 
   // Shape click handlers - simplified for better reliability
   const handleShapeClick = useCallback(async (e: KonvaEventObject<MouseEvent>, shape: Shape) => {
-    console.log('Shape click handler triggered for shape:', shape.id, 'Current selection:', selectedShapes);
     e.cancelBubble = true; // Prevent event from bubbling to stage
     
     // Check if shape is locked by another user and show toast notification
@@ -617,9 +617,6 @@ useEffect(() => {
       // Find all shapes in the same group
       const groupShapes = shapes.filter(s => s.groupId === shape.groupId);
       
-      console.log('Group selection - clicked shape:', shape.id, 'groupId:', shape.groupId);
-      console.log('Group shapes found:', groupShapes.map(s => s.id));
-      console.log('Current selection before group selection:', selectedShapes);
       
       if (groupShapes.length > 1) {
         // Check if Shift key is held for multi-select
@@ -628,38 +625,39 @@ useEffect(() => {
           const groupShapeIds = groupShapes.map(s => s.id);
           const isGroupSelected = groupShapeIds.every(id => selectedShapes.includes(id));
           
-          console.log('Shift+click on group - isGroupSelected:', isGroupSelected);
           
           if (isGroupSelected) {
             // Deselect entire group
             const newSelection = selectedShapes.filter((id: string) => !groupShapeIds.includes(id));
             setSelectedShapes(newSelection);
-            console.log('Deselected group, new selection:', newSelection);
           } else {
             // Select entire group
             const newSelection = [...selectedShapes.filter((id: string) => !groupShapeIds.includes(id)), ...groupShapeIds];
             setSelectedShapes(newSelection);
-            console.log('Selected group, new selection:', newSelection);
           }
           forceUpdate();
           return;
         } else {
-          // Single click on grouped shape - select entire group
+          // Single click on grouped shape
           const groupShapeIds = groupShapes.map(s => s.id);
-          console.log('Single click on group - selecting all shapes:', groupShapeIds);
-          setSelectedShapes(groupShapeIds);
-          console.log('Group selection set, calling forceUpdate');
-          forceUpdate();
-          return;
+          const isGroupSelected = groupShapeIds.every(id => selectedShapes.includes(id));
+          
+          if (isGroupSelected) {
+            // Group is already selected, just show tools (don't change selection)
+            forceUpdate();
+            return;
+          } else {
+            // Select entire group
+            setSelectedShapes(groupShapeIds);
+            forceUpdate();
+            return;
+          }
         }
       }
     }
     
     // Check if Shift key is held for multi-select (non-grouped shapes)
     if (e.evt.shiftKey) {
-      console.log('Shift+click detected for shape:', shape.id);
-      console.log('Current selection before toggle:', selectedShapes);
-      
       // Toggle selection (add if not present, remove if present)
       toggleSelection(shape.id);
       
@@ -682,6 +680,13 @@ useEffect(() => {
           console.error('Failed to unlock shape:', error);
         }
       });
+      return;
+    }
+    
+    // If clicking on a shape that's already in a multi-selection, just show tools (don't change selection)
+    if (selectedShapes.length > 1 && selectedShapes.includes(shape.id)) {
+      // Keep the current selection and show tools
+      forceUpdate();
       return;
     }
     
@@ -3406,6 +3411,12 @@ useEffect(() => {
         })()}
 
       </div>
+      
+      {/* Floating Tools Panel */}
+      <FloatingToolsPanel 
+        selectedShapes={selectedShapes}
+        shapes={shapes}
+      />
     </div>
   );
 }

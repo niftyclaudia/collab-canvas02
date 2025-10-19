@@ -44,17 +44,13 @@ export function LeftToolbar() {
     selectedColor, 
     setSelectedColor,
     selectedShapes,
-    setSelectedShapes,
-    shapes,
     selectedTextFormatting,
     applyBoldFormatting,
     applyItalicFormatting,
     applyUnderlineFormatting,
     applyFontSizeFormatting,
     clearCanvas,
-    editingTextId,
-    groupShapes,
-    ungroupShapes
+    editingTextId
   } = useCanvas();
 
   const { user } = useAuth();
@@ -126,51 +122,7 @@ export function LeftToolbar() {
     }
   };
 
-  // Handle lock placeholder
-  const handleLock = () => {
-    showToast('Lock feature coming soon', 'info');
-  };
 
-  // Handle unlock placeholder
-  const handleUnlock = () => {
-    showToast('Unlock feature coming soon', 'info');
-  };
-
-  // Handle group action
-  const handleGroup = async () => {
-    if (selectedShapes.length < 2) return;
-    
-    try {
-      await groupShapes(selectedShapes);
-    } catch (error) {
-      console.error('Failed to group shapes:', error);
-      // Error handling is done in the context
-    }
-  };
-
-  // Handle ungroup action
-  const handleUngroup = async () => {
-    if (selectedShapes.length === 0) {
-      showToast('No shapes selected to ungroup', 'error');
-      return;
-    }
-    
-    // Find the group ID from the first selected shape
-    const firstSelectedShape = shapes.find(s => s.id === selectedShapes[0]);
-    if (!firstSelectedShape || !firstSelectedShape.groupId) {
-      showToast('Selected shapes are not in a group', 'error');
-      return;
-    }
-    
-    try {
-      await ungroupShapes(firstSelectedShape.groupId);
-      // Clear selection after ungrouping
-      setSelectedShapes([]);
-    } catch (error) {
-      console.error('Failed to ungroup shapes:', error);
-      // Error handling is done in the context
-    }
-  };
 
   // Handle clear canvas
   const handleClearCanvas = async () => {
@@ -197,6 +149,12 @@ export function LeftToolbar() {
     formattingFunction();
   };
 
+  // Handle all button clicks to prevent event bubbling
+  const handleButtonClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   return (
     <div className="left-toolbar">
       <div className="toolbar-container">
@@ -206,7 +164,10 @@ export function LeftToolbar() {
           <button
             type="button"
             className={`toolbar-icon-button ${mode === 'select' ? 'active' : ''}`}
-            onClick={() => setMode('select')}
+            onClick={(e) => {
+              handleButtonClick(e);
+              setMode('select');
+            }}
             title="Select mode - click to select shapes, drag to move canvas"
           >
             <span style={{fontSize: '18px'}}>✋</span>
@@ -214,7 +175,10 @@ export function LeftToolbar() {
           <button
             type="button"
             className={`toolbar-icon-button ${mode === 'create' ? 'active' : ''}`}
-            onClick={() => setMode('create')}
+            onClick={(e) => {
+              handleButtonClick(e);
+              setMode('create');
+            }}
             title="Create mode - click and drag to create shapes"
           >
             <span style={{fontSize: '18px'}}>✏️</span>
@@ -233,7 +197,10 @@ export function LeftToolbar() {
                     key={tool.value}
                     type="button"
                     className={`toolbar-icon-button ${activeTool === tool.value ? 'active' : ''}`}
-                    onClick={() => setActiveTool(tool.value as any)}
+                    onClick={(e) => {
+                      handleButtonClick(e);
+                      setActiveTool(tool.value as any);
+                    }}
                     title={`Create ${tool.name}`}
                   >
                     <span style={{fontSize: '18px'}}>
@@ -253,7 +220,10 @@ export function LeftToolbar() {
                     key={tool.value}
                     type="button"
                     className={`toolbar-icon-button ${activeTool === tool.value ? 'active' : ''}`}
-                    onClick={() => setActiveTool(tool.value as any)}
+                    onClick={(e) => {
+                      handleButtonClick(e);
+                      setActiveTool(tool.value as any);
+                    }}
                     title={`Create ${tool.name}`}
                   >
                     <span style={{fontSize: '18px'}}>
@@ -279,7 +249,10 @@ export function LeftToolbar() {
                 type="button"
                 className={`color-button ${selectedColor === color.value ? 'active' : ''}`}
                 style={{ backgroundColor: color.value }}
-                onClick={() => setSelectedColor(color.value)}
+                onClick={(e) => {
+                  handleButtonClick(e);
+                  setSelectedColor(color.value);
+                }}
                 title={`Select ${color.name}`}
               >
                 {selectedColor === color.value && (
@@ -349,7 +322,10 @@ export function LeftToolbar() {
           <button
             type="button"
             className={`toolbar-icon-button ${selectedShapes.length === 0 ? 'disabled' : ''}`}
-            onClick={handleDelete}
+            onClick={(e) => {
+              handleButtonClick(e);
+              handleDelete();
+            }}
             disabled={selectedShapes.length === 0}
             title="Delete selected shapes"
           >
@@ -358,7 +334,10 @@ export function LeftToolbar() {
           <button
             type="button"
             className={`toolbar-icon-button ${selectedShapes.length === 0 ? 'disabled' : ''}`}
-            onClick={handleDuplicate}
+            onClick={(e) => {
+              handleButtonClick(e);
+              handleDuplicate();
+            }}
             disabled={selectedShapes.length === 0}
             title="Duplicate selected shapes"
           >
@@ -366,166 +345,16 @@ export function LeftToolbar() {
           </button>
         </div>
 
-        {/* Section 6: Grouping Tools */}
-        {(() => {
-          // Check if selected shapes are in a group
-          const selectedShapesInGroup = selectedShapes.filter(shapeId => {
-            const shape = shapes.find(s => s.id === shapeId);
-            return shape && shape.groupId;
-          });
-          
-          // Check if ALL selected shapes are in the same group
-          const allShapesInSameGroup = selectedShapes.length > 0 && 
-            selectedShapesInGroup.length === selectedShapes.length &&
-            selectedShapesInGroup.length > 0;
-          
-          // Get the group ID to verify all shapes are in the same group
-          let allInSameGroup = false;
-          if (allShapesInSameGroup) {
-            const firstShape = shapes.find(s => s.id === selectedShapes[0]);
-            const groupId = firstShape?.groupId;
-            allInSameGroup = Boolean(groupId && selectedShapes.every(shapeId => {
-              const shape = shapes.find(s => s.id === shapeId);
-              return shape && shape.groupId === groupId;
-            }));
-          }
-          
-          const canGroup = selectedShapes.length >= 2 && !allInSameGroup;
-          const canUngroup = allInSameGroup;
-          
-          console.log('LeftToolbar grouping logic:', {
-            selectedShapes,
-            selectedShapesInGroup: selectedShapesInGroup.length,
-            allShapesInSameGroup,
-            allInSameGroup,
-            canGroup,
-            canUngroup
-          });
-          
-          if (!canGroup && !canUngroup) return null;
-          
-          return (
-            <div className="toolbar-section">
-              {canGroup && (
-                <button
-                  type="button"
-                  className="toolbar-icon-button"
-                  onClick={handleGroup}
-                  title="Group selected shapes (Cmd/Ctrl+G)"
-                >
-                  <span style={{fontSize: '18px'}}>🔒</span>
-                </button>
-              )}
-              {canUngroup && (
-                <button
-                  type="button"
-                  className="toolbar-icon-button"
-                  onClick={handleUngroup}
-                  title="Ungroup selected shapes (Cmd/Ctrl+Shift+G)"
-                >
-                  <span style={{fontSize: '18px'}}>🔓</span>
-                </button>
-              )}
-            </div>
-          );
-        })()}
-
-        <div className="toolbar-divider"></div>
-
-        {/* Section 6: Z-Index Controls - Show when a single shape is selected */}
-        {(() => {
-          if (selectedShapes.length !== 1) return null;
-          
-          const handleBringToFront = async () => {
-            if (!user || selectedShapes.length === 0) return;
-            try {
-              await canvasService.bringToFront(selectedShapes[0]);
-              showToast('Shape brought to front', 'success');
-            } catch (error) {
-              console.error('Failed to bring shape to front:', error);
-              showToast('Failed to bring shape to front', 'error');
-            }
-          };
-
-          const handleSendToBack = async () => {
-            if (!user || selectedShapes.length === 0) return;
-            try {
-              await canvasService.sendToBack(selectedShapes[0]);
-              showToast('Shape sent to back', 'success');
-            } catch (error) {
-              console.error('Failed to send shape to back:', error);
-              showToast('Failed to send shape to back', 'error');
-            }
-          };
-
-          const handleBringForward = async () => {
-            if (!user || selectedShapes.length === 0) return;
-            try {
-              await canvasService.bringForward(selectedShapes[0]);
-              showToast('Shape brought forward', 'success');
-            } catch (error) {
-              console.error('Failed to bring shape forward:', error);
-              showToast('Failed to bring shape forward', 'error');
-            }
-          };
-
-          const handleSendBackward = async () => {
-            if (!user || selectedShapes.length === 0) return;
-            try {
-              await canvasService.sendBackward(selectedShapes[0]);
-              showToast('Shape sent backward', 'success');
-            } catch (error) {
-              console.error('Failed to send shape backward:', error);
-              showToast('Failed to send shape backward', 'error');
-            }
-          };
-
-          return (
-            <div className="toolbar-section">
-              <button
-                type="button"
-                className="toolbar-icon-button"
-                onClick={handleBringToFront}
-                title="Bring to Front (Cmd/Ctrl+Shift+])"
-              >
-                <span style={{fontSize: '18px'}}>⬆️🔝</span>
-              </button>
-              <button
-                type="button"
-                className="toolbar-icon-button"
-                onClick={handleSendToBack}
-                title="Send to Back (Cmd/Ctrl+Shift+[)"
-              >
-                <span style={{fontSize: '18px'}}>⬇️⬇️</span>
-              </button>
-              <button
-                type="button"
-                className="toolbar-icon-button"
-                onClick={handleBringForward}
-                title="Bring Forward (Cmd/Ctrl+])"
-              >
-                <span style={{fontSize: '18px'}}>⬆️</span>
-              </button>
-              <button
-                type="button"
-                className="toolbar-icon-button"
-                onClick={handleSendBackward}
-                title="Send Backward (Cmd/Ctrl+[)"
-              >
-                <span style={{fontSize: '18px'}}>⬇️</span>
-              </button>
-            </div>
-          );
-        })()}
-
-        <div className="toolbar-divider"></div>
 
         {/* Section 7: Canvas Actions */}
         <div className="toolbar-section">
           <button
             type="button"
             className="toolbar-icon-button clear-canvas"
-            onClick={handleClearCanvas}
+            onClick={(e) => {
+              handleButtonClick(e);
+              handleClearCanvas();
+            }}
             title="Clear all shapes from canvas"
           >
             <span style={{fontSize: '18px'}}>🧹</span>
