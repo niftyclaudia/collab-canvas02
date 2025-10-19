@@ -24,7 +24,7 @@ export function useAI() {
 
       // Create user message
       const userMessage: ChatMessage = {
-        id: `user_${Date.now()}`,
+        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         type: 'user',
         content: content.trim(),
         timestamp: new Date(),
@@ -34,19 +34,70 @@ export function useAI() {
       // Add user message to chat
       addChatMessage(userMessage);
 
-      // Send to AI service
-      const aiResponse = await aiService.sendMessage(content.trim(), user.uid);
+      // Check if this is a complex command
+      const lowerContent = content.toLowerCase();
+      const isComplexCommand = lowerContent.includes('create login form') || 
+                               lowerContent.includes('login form') ||
+                               (lowerContent.includes('make') && lowerContent.includes('grid')) ||
+                               lowerContent.includes('3x3 grid') ||
+                               lowerContent.includes('4x4 grid') ||
+                               lowerContent.includes('2x5 grid') ||
+                               lowerContent.includes('create') && lowerContent.includes('grid');
 
-      // Update user message status and add AI response
-      const updatedUserMessage: ChatMessage = {
-        ...userMessage,
-        status: 'success'
-      };
+      if (isComplexCommand) {
+        // Handle complex command with progress indicators
+        const complexResult = await aiService.executeComplexCommand(content.trim(), user.uid);
+        
+        // Create progress messages for each step
+        if (complexResult.totalSteps > 1) {
+          for (let i = 1; i <= complexResult.totalSteps; i++) {
+            const progressMessage: ChatMessage = {
+              id: `progress_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
+              type: 'ai',
+              content: `⚡ Step ${i}/${complexResult.totalSteps}: ${getStepDescription(content, i)}`,
+              timestamp: new Date(),
+              status: 'processing'
+            };
+            addChatMessage(progressMessage);
+            
+            // Small delay to show progress
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        }
 
-      addChatMessage(updatedUserMessage);
-      addChatMessage(aiResponse);
+        // Update user message status
+        const updatedUserMessage: ChatMessage = {
+          ...userMessage,
+          status: 'success'
+        };
+        addChatMessage(updatedUserMessage);
 
-      return aiResponse;
+        // Add final result message
+        const resultMessage: ChatMessage = {
+          id: `result_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'ai',
+          content: complexResult.message,
+          timestamp: new Date(),
+          status: complexResult.success ? 'success' : 'error'
+        };
+        addChatMessage(resultMessage);
+
+        return resultMessage;
+      } else {
+        // Handle regular command
+        const aiResponse = await aiService.sendMessage(content.trim(), user.uid);
+
+        // Update user message status and add AI response
+        const updatedUserMessage: ChatMessage = {
+          ...userMessage,
+          status: 'success'
+        };
+
+        addChatMessage(updatedUserMessage);
+        addChatMessage(aiResponse);
+
+        return aiResponse;
+      }
 
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -68,6 +119,29 @@ export function useAI() {
       setChatProcessing(false);
     }
   }, [user, showToast, addChatMessage, setChatProcessing]);
+
+  // Helper function to get step descriptions for complex commands
+  const getStepDescription = (command: string, step: number): string => {
+    const lowerCommand = command.toLowerCase();
+    
+    if (lowerCommand.includes('login form')) {
+      const steps = [
+        'Creating title...',
+        'Adding username label...',
+        'Creating username input...',
+        'Adding password label...',
+        'Creating password input...',
+        'Adding login button...'
+      ];
+      return steps[step - 1] || `Processing step ${step}...`;
+    }
+    
+    if (lowerCommand.includes('grid')) {
+      return `Creating shape ${step}...`;
+    }
+    
+    return `Processing step ${step}...`;
+  };
 
   return {
     sendMessage

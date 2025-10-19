@@ -11,6 +11,15 @@ interface CommandResult {
   toolCalls: any[];
 }
 
+interface ComplexCommandResult {
+  success: boolean;
+  stepsCompleted: number;
+  totalSteps: number;
+  createdShapes: string[];
+  errors: string[];
+  message: string;
+}
+
 interface AIServiceOptions {
   onError?: (message: string) => void;
   onSuccess?: (message: string) => void;
@@ -211,6 +220,418 @@ export class AIService {
    */
   private generateMessageId(): string {
     return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Execute complex multi-step AI commands with progress feedback
+   * @param command The complex command to execute
+   * @param userId The user ID
+   * @param context Optional canvas state context
+   * @returns Promise<ComplexCommandResult>
+   */
+  async executeComplexCommand(
+    command: string, 
+    userId: string
+  ): Promise<ComplexCommandResult> {
+    try {
+      const lowerCommand = command.toLowerCase();
+      console.log(`🔍 [Complex Command] Processing: "${command}"`);
+      console.log(`🔍 [Complex Command] Lower: "${lowerCommand}"`);
+      
+      // Check for specific complex commands
+      if (lowerCommand.includes('create login form') || lowerCommand.includes('login form')) {
+        return await this.createLoginForm(userId);
+      }
+      
+      // Check for specific grid patterns
+      if (lowerCommand.includes('3x3 grid') || lowerCommand.includes('create 3x3 grid') || 
+          lowerCommand.includes('make 3x3 grid')) {
+        const useRandomColors = lowerCommand.includes('random') && lowerCommand.includes('color');
+        return await this.createGrid(userId, 3, 3, 50, undefined, useRandomColors);
+      }
+      
+      if (lowerCommand.includes('4x4 grid') || lowerCommand.includes('create 4x4 grid') || 
+          lowerCommand.includes('make 4x4 grid')) {
+        const useRandomColors = lowerCommand.includes('random') && lowerCommand.includes('color');
+        console.log(`🔍 [Complex Command] 4x4 grid detected, useRandomColors: ${useRandomColors}`);
+        return await this.createGrid(userId, 4, 4, 50, undefined, useRandomColors);
+      }
+      
+      // Generic grid pattern matching
+      if ((lowerCommand.includes('make') || lowerCommand.includes('create')) && lowerCommand.includes('grid')) {
+        // Parse grid dimensions from command
+        const gridMatch = command.match(/(\d+)x(\d+)\s+grid/);
+        if (gridMatch) {
+          const rows = parseInt(gridMatch[1]);
+          const cols = parseInt(gridMatch[2]);
+          const useRandomColors = lowerCommand.includes('random') && lowerCommand.includes('color');
+          return await this.createGrid(userId, rows, cols, 50, undefined, useRandomColors);
+        }
+      }
+      
+      // Fallback to regular command execution
+      const result = await this.executeCommand(command, userId);
+      return {
+        success: result.success,
+        stepsCompleted: result.success ? 1 : 0,
+        totalSteps: 1,
+        createdShapes: result.toolCalls.filter(tc => tc.success).map(tc => tc.result?.id).filter(Boolean),
+        errors: result.success ? [] : [result.message],
+        message: result.message
+      };
+    } catch (error: any) {
+      console.error('Complex command execution error:', error);
+      return {
+        success: false,
+        stepsCompleted: 0,
+        totalSteps: 1,
+        createdShapes: [],
+        errors: [error.message || 'Unknown error'],
+        message: `❌ Failed to execute complex command: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Create a login form with 6 properly positioned elements
+   * @param userId The user ID
+   * @param position Optional position for the form
+   * @returns Promise<ComplexCommandResult>
+   */
+  async createLoginForm(userId: string, position?: {x: number, y: number}): Promise<ComplexCommandResult> {
+    const startX = position?.x || 2000;
+    const startY = position?.y || 2000;
+    const createdShapes: string[] = [];
+    const errors: string[] = [];
+    let stepsCompleted = 0;
+    const totalSteps = 11; // 1 background + 1 title + 2 labels + 2 inputs + 2 placeholders + 1 button + 1 button text + 1 grouping
+
+    try {
+      // Step 1: Create form background (clean, minimal design)
+      try {
+        const background = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX,
+          y: startY - 25,
+          width: 260,
+          height: 290,
+          color: '#f8f9fa',
+          createdBy: userId
+        });
+        createdShapes.push(background.id);
+        stepsCompleted++;
+        console.log('✅ Step 1: Created clean form background');
+      } catch (error: any) {
+        errors.push(`Failed to create form background: ${error.message}`);
+        console.error('❌ Step 1 failed:', error);
+      }
+
+      // Step 2: Create title (properly centered)
+      try {
+        const title = await this.canvasService.createText(
+          'Login Form',
+          startX + 50, // True center: startX + (260/2) - (textWidth/2) = startX + 130 - 80 = startX + 50
+          startY,
+          24,
+          '#000000',
+          'bold',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(title.id);
+        stepsCompleted++;
+        console.log('✅ Step 2: Created properly centered title');
+      } catch (error: any) {
+        errors.push(`Failed to create title: ${error.message}`);
+        console.error('❌ Step 2 failed:', error);
+      }
+
+      // Step 3: Create username label
+      try {
+        const usernameLabel = await this.canvasService.createText(
+          'Username:',
+          startX + 25,
+          startY + 50,
+          16,
+          '#000000',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(usernameLabel.id);
+        stepsCompleted++;
+        console.log('✅ Step 3: Created username label');
+      } catch (error: any) {
+        errors.push(`Failed to create username label: ${error.message}`);
+        console.error('❌ Step 3 failed:', error);
+      }
+
+      // Step 4: Create username input
+      try {
+        const usernameInput = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 25,
+          y: startY + 70,
+          width: 200,
+          height: 30,
+          color: '#ffffff',
+          createdBy: userId
+        });
+        createdShapes.push(usernameInput.id);
+        stepsCompleted++;
+        console.log('✅ Step 4: Created username input');
+      } catch (error: any) {
+        errors.push(`Failed to create username input: ${error.message}`);
+        console.error('❌ Step 4 failed:', error);
+      }
+
+      // Step 5: Add username placeholder text (left-aligned with input)
+      try {
+        const usernamePlaceholder = await this.canvasService.createText(
+          'Enter username',
+          startX + 30, // Left-aligned with input field (input starts at startX + 25, so +5 for padding)
+          startY + 80, // Center vertically: startY + 70 (input top) + 15 (half of 30px height) - 5 (text height offset for true center)
+          12,
+          '#999999',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(usernamePlaceholder.id);
+        stepsCompleted++;
+        console.log('✅ Step 5: Added username placeholder text (left-aligned)');
+      } catch (error: any) {
+        errors.push(`Failed to create username placeholder: ${error.message}`);
+        console.error('❌ Step 5 failed:', error);
+      }
+
+      // Step 6: Create password label
+      try {
+        const passwordLabel = await this.canvasService.createText(
+          'Password:',
+          startX + 25,
+          startY + 120,
+          16,
+          '#000000',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(passwordLabel.id);
+        stepsCompleted++;
+        console.log('✅ Step 6: Created password label');
+      } catch (error: any) {
+        errors.push(`Failed to create password label: ${error.message}`);
+        console.error('❌ Step 6 failed:', error);
+      }
+
+      // Step 7: Create password input
+      try {
+        const passwordInput = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 25,
+          y: startY + 140,
+          width: 200,
+          height: 30,
+          color: '#ffffff',
+          createdBy: userId
+        });
+        createdShapes.push(passwordInput.id);
+        stepsCompleted++;
+        console.log('✅ Step 7: Created password input');
+      } catch (error: any) {
+        errors.push(`Failed to create password input: ${error.message}`);
+        console.error('❌ Step 7 failed:', error);
+      }
+
+      // Step 8: Add password placeholder text (left-aligned with input)
+      try {
+        const passwordPlaceholder = await this.canvasService.createText(
+          'Enter password',
+          startX + 30, // Left-aligned with input field (input starts at startX + 25, so +5 for padding)
+          startY + 150, // Center vertically: startY + 140 (input top) + 15 (half of 30px height) - 5 (text height offset for true center)
+          12,
+          '#999999',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(passwordPlaceholder.id);
+        stepsCompleted++;
+        console.log('✅ Step 8: Added password placeholder text (left-aligned)');
+      } catch (error: any) {
+        errors.push(`Failed to create password placeholder: ${error.message}`);
+        console.error('❌ Step 8 failed:', error);
+      }
+
+      // Step 9: Create login button (properly centered)
+      try {
+        const loginButton = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 80, // True center: startX + (260-100)/2 = startX + 80
+          y: startY + 200,
+          width: 100,
+          height: 40,
+          color: '#2563eb', // Darker blue for better contrast
+          createdBy: userId
+        });
+        createdShapes.push(loginButton.id);
+        stepsCompleted++;
+        console.log('✅ Step 9: Created properly centered login button');
+      } catch (error: any) {
+        errors.push(`Failed to create login button: ${error.message}`);
+        console.error('❌ Step 9 failed:', error);
+      }
+
+      // Step 10: Add "Submit" text to button (center-aligned)
+      try {
+        const buttonText = await this.canvasService.createText(
+          'Submit',
+          startX + 102, // True center: button center (startX + 130) - (textWidth/2) = startX + 130 - 28 = startX + 102
+          startY + 213, // Center vertically: startY + 200 (button top) + 20 (half of 40px height) - 7 (text height offset)
+          14,
+          '#ffffff',
+          'bold',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(buttonText.id);
+        stepsCompleted++;
+        console.log('✅ Step 10: Added center-aligned button text');
+      } catch (error: any) {
+        errors.push(`Failed to create button text: ${error.message}`);
+        console.error('❌ Step 10 failed:', error);
+      }
+
+      // Step 11: Group all form elements together
+      try {
+        if (createdShapes.length > 0) {
+          await this.canvasService.groupShapes(createdShapes, userId);
+          stepsCompleted++;
+          console.log('✅ Step 11: Grouped all form elements together');
+        }
+      } catch (error: any) {
+        errors.push(`Failed to group form elements: ${error.message}`);
+        console.error('❌ Step 11 failed:', error);
+      }
+
+      const success = stepsCompleted === totalSteps;
+      const message = success 
+        ? `✅ Login form created with ${stepsCompleted} elements`
+        : `⚠️ Login form partially created: ${stepsCompleted}/${totalSteps} elements (${errors.length} errors)`;
+
+      return {
+        success,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors,
+        message
+      };
+
+    } catch (error: any) {
+      console.error('❌ Login form creation failed:', error);
+      return {
+        success: false,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors: [...errors, `Login form creation failed: ${error.message}`],
+        message: `❌ Failed to create login form: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Create a grid of shapes
+   * @param userId The user ID
+   * @param rows Number of rows
+   * @param cols Number of columns
+   * @param spacing Spacing between shapes
+   * @param position Optional position for the grid
+   * @returns Promise<ComplexCommandResult>
+   */
+  async createGrid(
+    userId: string, 
+    rows: number, 
+    cols: number, 
+    spacing: number,
+    position?: {x: number, y: number},
+    useRandomColors: boolean = false
+  ): Promise<ComplexCommandResult> {
+    const startX = position?.x || 2000;
+    const startY = position?.y || 2000;
+    const createdShapes: string[] = [];
+    const errors: string[] = [];
+    let stepsCompleted = 0;
+    const totalSteps = rows * cols;
+
+    try {
+      const shapeSize = 60;
+      const colors = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899'];
+      const defaultColor = '#3b82f6'; // Single color for grids without random colors
+      
+      console.log(`🔍 [createGrid] Creating ${rows}x${cols} grid, useRandomColors: ${useRandomColors}`);
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          try {
+            const x = startX + (col * (shapeSize + spacing));
+            const y = startY + (row * (shapeSize + spacing));
+            const color = useRandomColors ? colors[(row * cols + col) % colors.length] : defaultColor;
+            console.log(`🔍 [createGrid] Shape at (${x}, ${y}) using color: ${color}`);
+
+            const shape = await this.canvasService.createShape({
+              type: 'rectangle',
+              x,
+              y,
+              width: shapeSize,
+              height: shapeSize,
+              color,
+              createdBy: userId
+            });
+            
+            createdShapes.push(shape.id);
+            stepsCompleted++;
+            console.log(`✅ Step ${stepsCompleted}: Created shape at (${x}, ${y})`);
+          } catch (error: any) {
+            errors.push(`Failed to create shape at row ${row}, col ${col}: ${error.message}`);
+            console.error(`❌ Step ${stepsCompleted + 1} failed:`, error);
+          }
+        }
+      }
+
+      const success = stepsCompleted === totalSteps;
+      const message = success 
+        ? `✅ ${rows}x${cols} grid created with ${stepsCompleted} shapes`
+        : `⚠️ Grid partially created: ${stepsCompleted}/${totalSteps} shapes (${errors.length} errors)`;
+
+      return {
+        success,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors,
+        message
+      };
+
+    } catch (error: any) {
+      console.error('❌ Grid creation failed:', error);
+      return {
+        success: false,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors: [...errors, `Grid creation failed: ${error.message}`],
+        message: `❌ Failed to create grid: ${error.message}`
+      };
+    }
   }
   
   private async executeToolCalls(toolCalls: any[], userId: string): Promise<any[]> {
