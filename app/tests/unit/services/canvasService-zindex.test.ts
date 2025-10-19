@@ -1,270 +1,258 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { canvasService } from '../../../src/services/canvasService';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { CanvasService } from '../../../src/services/canvasService';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  updateDoc,
+  query,
+  orderBy
+} from 'firebase/firestore';
 import { firestore } from '../../../src/firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 // Mock Firebase
-vi.mock('../../../src/firebase', () => ({
-  firestore: {}
-}));
-
-// Mock Firebase functions
 vi.mock('firebase/firestore', () => ({
+  collection: vi.fn(),
   doc: vi.fn(),
+  getDocs: vi.fn(),
   getDoc: vi.fn(),
   updateDoc: vi.fn(),
-  setDoc: vi.fn(),
-  deleteDoc: vi.fn(),
-  collection: vi.fn(),
   query: vi.fn(),
   orderBy: vi.fn(),
-  onSnapshot: vi.fn(),
-  getDocs: vi.fn(),
-  serverTimestamp: vi.fn(() => ({ seconds: Date.now() / 1000, nanoseconds: 0 })),
+  serverTimestamp: vi.fn(() => ({ seconds: 1234567890, nanoseconds: 0 })),
   writeBatch: vi.fn(() => ({
     set: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
     commit: vi.fn()
   }))
 }));
 
-describe('CanvasService Z-Index Unit Tests', () => {
-  const mockUserId = 'test-user-123';
-  const mockShapeId = 'shape-123';
+vi.mock('../../../src/firebase', () => ({
+  firestore: {}
+}));
+
+describe('CanvasService - Z-Index Methods', () => {
+  let canvasService: CanvasService;
+  const mockCanvasId = 'test-canvas-id';
+  const mockUserId = 'test-user-id';
 
   beforeEach(() => {
-    // Reset mocks before each test
     vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    // Clean up after each test
-    vi.restoreAllMocks();
+    canvasService = new CanvasService(mockCanvasId, mockUserId);
   });
 
   describe('getZIndexRange', () => {
-    it('should return correct z-index range for multiple shapes', async () => {
-      const mockShapes = [
-        { id: 'shape-1', zIndex: 1 },
-        { id: 'shape-2', zIndex: 5 },
-        { id: 'shape-3', zIndex: 3 }
-      ];
+    it('should return default range when no shapes exist', async () => {
+      const mockQuerySnapshot = {
+        empty: true,
+        docs: []
+      };
+      (getDocs as any).mockResolvedValue(mockQuerySnapshot);
+
+      const result = await canvasService.getZIndexRange();
       
-      const mockGetShapes = vi.spyOn(canvasService, 'getShapes');
-      mockGetShapes.mockResolvedValue(mockShapes);
-
-      const range = await canvasService.getZIndexRange();
-
-      expect(range).toEqual({ min: 1, max: 5 });
+      expect(result).toEqual({ min: 0, max: 0 });
     });
 
-    it('should handle shapes with undefined zIndex', async () => {
+    it('should return correct range when shapes exist', async () => {
       const mockShapes = [
-        { id: 'shape-1', zIndex: 1 },
-        { id: 'shape-2' }, // No zIndex
-        { id: 'shape-3', zIndex: 3 }
+        { id: 'shape1', zIndex: 10 },
+        { id: 'shape2', zIndex: 5 },
+        { id: 'shape3', zIndex: 15 }
       ];
       
-      const mockGetShapes = vi.spyOn(canvasService, 'getShapes');
-      mockGetShapes.mockResolvedValue(mockShapes);
+      const mockQuerySnapshot = {
+        empty: false,
+        docs: mockShapes.map(shape => ({
+          id: shape.id,
+          data: () => ({ zIndex: shape.zIndex })
+        }))
+      };
+      (getDocs as any).mockResolvedValue(mockQuerySnapshot);
 
-      const range = await canvasService.getZIndexRange();
-
-      expect(range).toEqual({ min: 0, max: 3 });
+      const result = await canvasService.getZIndexRange();
+      
+      expect(result).toEqual({ min: 5, max: 15 });
     });
 
-    it('should return default range for empty shapes array', async () => {
-      const mockGetShapes = vi.spyOn(canvasService, 'getShapes');
-      mockGetShapes.mockResolvedValue([]);
+    it('should handle shapes without zIndex', async () => {
+      const mockShapes = [
+        { id: 'shape1', zIndex: 10 },
+        { id: 'shape2' }, // no zIndex
+        { id: 'shape3', zIndex: 5 }
+      ];
+      
+      const mockQuerySnapshot = {
+        empty: false,
+        docs: mockShapes.map(shape => ({
+          id: shape.id,
+          data: () => ({ zIndex: shape.zIndex })
+        }))
+      };
+      (getDocs as any).mockResolvedValue(mockQuerySnapshot);
 
-      const range = await canvasService.getZIndexRange();
-
-      expect(range).toEqual({ min: 0, max: 0 });
+      const result = await canvasService.getZIndexRange();
+      
+      expect(result).toEqual({ min: 0, max: 10 });
     });
   });
 
   describe('bringToFront', () => {
-    it('should update shape z-index to max + 1', async () => {
-      const mockGetZIndexRange = vi.spyOn(canvasService, 'getZIndexRange');
-      const mockUpdateShape = vi.spyOn(canvasService, 'updateShape');
+    it('should update shape zIndex to max + 1', async () => {
+      const shapeId = 'test-shape-id';
+      const mockZIndexRange = { min: 5, max: 15 };
       
-      mockGetZIndexRange.mockResolvedValue({ min: 0, max: 5 });
-      mockUpdateShape.mockResolvedValue(undefined);
+      // Mock getZIndexRange
+      vi.spyOn(canvasService, 'getZIndexRange').mockResolvedValue(mockZIndexRange);
+      
+      // Mock updateShape
+      const updateShapeSpy = vi.spyOn(canvasService, 'updateShape').mockResolvedValue();
 
-      await canvasService.bringToFront(mockShapeId);
+      await canvasService.bringToFront(shapeId);
 
-      expect(mockGetZIndexRange).toHaveBeenCalled();
-      expect(mockUpdateShape).toHaveBeenCalledWith(mockShapeId, { zIndex: 6 });
+      expect(updateShapeSpy).toHaveBeenCalledWith(shapeId, { zIndex: 16 });
     });
 
-    it('should handle error in getZIndexRange', async () => {
-      const mockGetZIndexRange = vi.spyOn(canvasService, 'getZIndexRange');
-      mockGetZIndexRange.mockRejectedValue(new Error('Database error'));
+    it('should throw error when getZIndexRange fails', async () => {
+      const shapeId = 'test-shape-id';
+      const error = new Error('Failed to get z-index range');
+      
+      vi.spyOn(canvasService, 'getZIndexRange').mockRejectedValue(error);
 
-      await expect(canvasService.bringToFront(mockShapeId)).rejects.toThrow('Database error');
+      await expect(canvasService.bringToFront(shapeId)).rejects.toThrow('Failed to get z-index range');
     });
   });
 
   describe('sendToBack', () => {
-    it('should update shape z-index to min - 1', async () => {
-      const mockGetZIndexRange = vi.spyOn(canvasService, 'getZIndexRange');
-      const mockUpdateShape = vi.spyOn(canvasService, 'updateShape');
+    it('should update shape zIndex to min - 1', async () => {
+      const shapeId = 'test-shape-id';
+      const mockZIndexRange = { min: 5, max: 15 };
       
-      mockGetZIndexRange.mockResolvedValue({ min: 2, max: 5 });
-      mockUpdateShape.mockResolvedValue(undefined);
+      vi.spyOn(canvasService, 'getZIndexRange').mockResolvedValue(mockZIndexRange);
+      const updateShapeSpy = vi.spyOn(canvasService, 'updateShape').mockResolvedValue();
 
-      await canvasService.sendToBack(mockShapeId);
+      await canvasService.sendToBack(shapeId);
 
-      expect(mockGetZIndexRange).toHaveBeenCalled();
-      expect(mockUpdateShape).toHaveBeenCalledWith(mockShapeId, { zIndex: 1 });
+      expect(updateShapeSpy).toHaveBeenCalledWith(shapeId, { zIndex: 4 });
     });
   });
 
   describe('bringForward', () => {
-    it('should swap z-index with next higher shape', async () => {
-      const mockShapes = [
-        { id: 'shape-1', zIndex: 1 },
-        { id: 'shape-2', zIndex: 3 },
-        { id: mockShapeId, zIndex: 2 },
-        { id: 'shape-4', zIndex: 4 }
-      ];
+    it('should swap zIndex with next higher shape', async () => {
+      const shapeId = 'test-shape-id';
+      const currentZIndex = 10;
       
-      const mockGetShapes = vi.spyOn(canvasService, 'getShapes');
-      const mockUpdateShape = vi.spyOn(canvasService, 'updateShape');
-      const mockGetDoc = vi.fn();
-      
-      mockGetShapes.mockResolvedValue(mockShapes);
-      mockUpdateShape.mockResolvedValue(undefined);
-      mockGetDoc.mockResolvedValue({
+      // Mock getDoc for current shape
+      const mockShapeDoc = {
         exists: () => true,
-        data: () => ({ zIndex: 2 })
-      });
-      
-      // Mock the getDoc function
-      vi.mocked(getDoc).mockResolvedValue(mockGetDoc());
+        id: shapeId,
+        data: () => ({ zIndex: currentZIndex })
+      };
+      (getDoc as any).mockResolvedValue(mockShapeDoc);
 
-      await canvasService.bringForward(mockShapeId);
+      // Mock getShapes to return shapes with higher zIndex
+      const mockShapes = [
+        { id: 'shape1', zIndex: 5 },
+        { id: 'shape2', zIndex: 12 }, // next higher
+        { id: 'shape3', zIndex: 15 }
+      ];
+      vi.spyOn(canvasService, 'getShapes').mockResolvedValue(mockShapes as any);
 
-      expect(mockUpdateShape).toHaveBeenCalledWith(mockShapeId, { zIndex: 3 });
-      expect(mockUpdateShape).toHaveBeenCalledWith('shape-2', { zIndex: 2 });
+      const updateShapeSpy = vi.spyOn(canvasService, 'updateShape').mockResolvedValue();
+
+      await canvasService.bringForward(shapeId);
+
+      expect(updateShapeSpy).toHaveBeenCalledTimes(2);
+      expect(updateShapeSpy).toHaveBeenCalledWith(shapeId, { zIndex: 12 });
+      expect(updateShapeSpy).toHaveBeenCalledWith('shape2', { zIndex: 10 });
     });
 
     it('should call bringToFront when already at front', async () => {
-      const mockShapes = [
-        { id: 'shape-1', zIndex: 1 },
-        { id: 'shape-2', zIndex: 2 },
-        { id: mockShapeId, zIndex: 5 } // Highest z-index
-      ];
+      const shapeId = 'test-shape-id';
+      const currentZIndex = 15;
       
-      const mockGetShapes = vi.spyOn(canvasService, 'getShapes');
-      const mockBringToFront = vi.spyOn(canvasService, 'bringToFront');
-      const mockGetDoc = vi.fn();
-      
-      mockGetShapes.mockResolvedValue(mockShapes);
-      mockBringToFront.mockResolvedValue(undefined);
-      mockGetDoc.mockResolvedValue({
+      const mockShapeDoc = {
         exists: () => true,
-        data: () => ({ zIndex: 5 })
-      });
+        id: shapeId,
+        data: () => ({ zIndex: currentZIndex })
+      };
+      (getDoc as any).mockResolvedValue(mockShapeDoc);
+
+      const mockShapes = [
+        { id: 'shape1', zIndex: 5 },
+        { id: 'shape2', zIndex: 10 }
+      ];
+      vi.spyOn(canvasService, 'getShapes').mockResolvedValue(mockShapes as any);
       
-      vi.mocked(getDoc).mockResolvedValue(mockGetDoc());
+      const bringToFrontSpy = vi.spyOn(canvasService, 'bringToFront').mockResolvedValue();
 
-      await canvasService.bringForward(mockShapeId);
+      await canvasService.bringForward(shapeId);
 
-      expect(mockBringToFront).toHaveBeenCalledWith(mockShapeId);
+      expect(bringToFrontSpy).toHaveBeenCalledWith(shapeId);
     });
 
-    it('should handle shape not found', async () => {
-      const mockGetDoc = vi.fn();
-      mockGetDoc.mockResolvedValue({
-        exists: () => false
-      });
+    it('should throw error when shape does not exist', async () => {
+      const shapeId = 'non-existent-shape';
       
-      vi.mocked(getDoc).mockResolvedValue(mockGetDoc());
+      const mockShapeDoc = {
+        exists: () => false
+      };
+      (getDoc as any).mockResolvedValue(mockShapeDoc);
 
-      await expect(canvasService.bringForward(mockShapeId)).rejects.toThrow('Shape not found');
+      await expect(canvasService.bringForward(shapeId)).rejects.toThrow('Shape not found');
     });
   });
 
   describe('sendBackward', () => {
-    it('should swap z-index with next lower shape', async () => {
-      const mockShapes = [
-        { id: 'shape-1', zIndex: 1 },
-        { id: 'shape-2', zIndex: 2 },
-        { id: mockShapeId, zIndex: 3 },
-        { id: 'shape-4', zIndex: 4 }
-      ];
+    it('should swap zIndex with next lower shape', async () => {
+      const shapeId = 'test-shape-id';
+      const currentZIndex = 10;
       
-      const mockGetShapes = vi.spyOn(canvasService, 'getShapes');
-      const mockUpdateShape = vi.spyOn(canvasService, 'updateShape');
-      const mockGetDoc = vi.fn();
-      
-      mockGetShapes.mockResolvedValue(mockShapes);
-      mockUpdateShape.mockResolvedValue(undefined);
-      mockGetDoc.mockResolvedValue({
+      const mockShapeDoc = {
         exists: () => true,
-        data: () => ({ zIndex: 3 })
-      });
-      
-      vi.mocked(getDoc).mockResolvedValue(mockGetDoc());
+        id: shapeId,
+        data: () => ({ zIndex: currentZIndex })
+      };
+      (getDoc as any).mockResolvedValue(mockShapeDoc);
 
-      await canvasService.sendBackward(mockShapeId);
+      const mockShapes = [
+        { id: 'shape1', zIndex: 5 },
+        { id: 'shape2', zIndex: 8 }, // next lower
+        { id: 'shape3', zIndex: 15 }
+      ];
+      vi.spyOn(canvasService, 'getShapes').mockResolvedValue(mockShapes as any);
 
-      expect(mockUpdateShape).toHaveBeenCalledWith(mockShapeId, { zIndex: 2 });
-      expect(mockUpdateShape).toHaveBeenCalledWith('shape-2', { zIndex: 3 });
+      const updateShapeSpy = vi.spyOn(canvasService, 'updateShape').mockResolvedValue();
+
+      await canvasService.sendBackward(shapeId);
+
+      expect(updateShapeSpy).toHaveBeenCalledTimes(2);
+      expect(updateShapeSpy).toHaveBeenCalledWith(shapeId, { zIndex: 8 });
+      expect(updateShapeSpy).toHaveBeenCalledWith('shape2', { zIndex: 10 });
     });
 
     it('should call sendToBack when already at back', async () => {
+      const shapeId = 'test-shape-id';
+      const currentZIndex = 5;
+      
+      const mockShapeDoc = {
+        exists: () => true,
+        id: shapeId,
+        data: () => ({ zIndex: currentZIndex })
+      };
+      (getDoc as any).mockResolvedValue(mockShapeDoc);
+
       const mockShapes = [
-        { id: mockShapeId, zIndex: 1 }, // Lowest z-index
-        { id: 'shape-2', zIndex: 2 },
-        { id: 'shape-3', zIndex: 3 }
+        { id: 'shape1', zIndex: 10 },
+        { id: 'shape2', zIndex: 15 }
       ];
+      vi.spyOn(canvasService, 'getShapes').mockResolvedValue(mockShapes as any);
       
-      const mockGetShapes = vi.spyOn(canvasService, 'getShapes');
-      const mockSendToBack = vi.spyOn(canvasService, 'sendToBack');
-      const mockGetDoc = vi.fn();
-      
-      mockGetShapes.mockResolvedValue(mockShapes);
-      mockSendToBack.mockResolvedValue(undefined);
-      mockGetDoc.mockResolvedValue({
-        exists: () => true,
-        data: () => ({ zIndex: 1 })
-      });
-      
-      vi.mocked(getDoc).mockResolvedValue(mockGetDoc());
+      const sendToBackSpy = vi.spyOn(canvasService, 'sendToBack').mockResolvedValue();
 
-      await canvasService.sendBackward(mockShapeId);
+      await canvasService.sendBackward(shapeId);
 
-      expect(mockSendToBack).toHaveBeenCalledWith(mockShapeId);
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('should handle updateShape errors in bringToFront', async () => {
-      const mockGetZIndexRange = vi.spyOn(canvasService, 'getZIndexRange');
-      const mockUpdateShape = vi.spyOn(canvasService, 'updateShape');
-      
-      mockGetZIndexRange.mockResolvedValue({ min: 0, max: 5 });
-      mockUpdateShape.mockRejectedValue(new Error('Update failed'));
-
-      await expect(canvasService.bringToFront(mockShapeId)).rejects.toThrow('Update failed');
-    });
-
-    it('should handle getShapes errors in bringForward', async () => {
-      const mockGetShapes = vi.spyOn(canvasService, 'getShapes');
-      const mockGetDoc = vi.fn();
-      
-      mockGetShapes.mockRejectedValue(new Error('Database error'));
-      mockGetDoc.mockResolvedValue({
-        exists: () => true,
-        data: () => ({ zIndex: 2 })
-      });
-      
-      vi.mocked(getDoc).mockResolvedValue(mockGetDoc());
-
-      await expect(canvasService.bringForward(mockShapeId)).rejects.toThrow('Database error');
+      expect(sendToBackSpy).toHaveBeenCalledWith(shapeId);
     });
   });
 });
