@@ -231,8 +231,7 @@ export class AIService {
    */
   async executeComplexCommand(
     command: string, 
-    userId: string, 
-    context?: any
+    userId: string
   ): Promise<ComplexCommandResult> {
     try {
       const lowerCommand = command.toLowerCase();
@@ -339,14 +338,15 @@ export class AIService {
 
       // Step 3: Create username input
       try {
-        const usernameInput = await this.canvasService.createRectangle(
-          startX + 100,
-          startY + 55,
-          200,
-          30,
-          '#ffffff',
-          userId
-        );
+        const usernameInput = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 100,
+          y: startY + 55,
+          width: 200,
+          height: 30,
+          color: '#ffffff',
+          createdBy: userId
+        });
         createdShapes.push(usernameInput.id);
         stepsCompleted++;
         console.log('✅ Step 3: Created username input');
@@ -378,14 +378,15 @@ export class AIService {
 
       // Step 5: Create password input
       try {
-        const passwordInput = await this.canvasService.createRectangle(
-          startX + 100,
-          startY + 115,
-          200,
-          30,
-          '#ffffff',
-          userId
-        );
+        const passwordInput = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 100,
+          y: startY + 115,
+          width: 200,
+          height: 30,
+          color: '#ffffff',
+          createdBy: userId
+        });
         createdShapes.push(passwordInput.id);
         stepsCompleted++;
         console.log('✅ Step 5: Created password input');
@@ -396,14 +397,15 @@ export class AIService {
 
       // Step 6: Create login button
       try {
-        const loginButton = await this.canvasService.createRectangle(
-          startX + 50,
-          startY + 180,
-          100,
-          40,
-          '#3b82f6',
-          userId
-        );
+        const loginButton = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 50,
+          y: startY + 180,
+          width: 100,
+          height: 40,
+          color: '#3b82f6',
+          createdBy: userId
+        });
         createdShapes.push(loginButton.id);
         stepsCompleted++;
         console.log('✅ Step 6: Created login button');
@@ -473,14 +475,15 @@ export class AIService {
             const y = startY + (row * (shapeSize + spacing));
             const color = colors[(row * cols + col) % colors.length];
 
-            const shape = await this.canvasService.createRectangle(
+            const shape = await this.canvasService.createShape({
+              type: 'rectangle',
               x,
               y,
-              shapeSize,
-              shapeSize,
+              width: shapeSize,
+              height: shapeSize,
               color,
-              userId
-            );
+              createdBy: userId
+            });
             
             createdShapes.push(shape.id);
             stepsCompleted++;
