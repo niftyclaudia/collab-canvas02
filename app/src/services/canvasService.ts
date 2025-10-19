@@ -1785,7 +1785,7 @@ export class CanvasService {
    */
   async getCanvases(userId: string): Promise<Canvas[]> {
     try {
-      // Get user's private canvases
+      // First, try to get user's private canvases
       const privateQuery = query(
         collection(firestore, 'canvases'),
         where('createdBy', '==', userId),
@@ -1823,6 +1823,12 @@ export class CanvasService {
         } as Canvas);
       });
 
+      // If user has no canvases, create a default one
+      if (canvases.length === 0) {
+        const defaultCanvas = await this.createCanvas('My First Canvas', userId, false);
+        canvases.push(defaultCanvas);
+      }
+
       // Sort by updatedAt descending
       canvases.sort((a, b) => {
         const aTime = a.updatedAt?.toMillis() || 0;
@@ -1833,7 +1839,14 @@ export class CanvasService {
       return canvases;
     } catch (error) {
       console.error('❌ Error fetching canvases:', error);
-      throw error;
+      // If there's an error, try to create a default canvas
+      try {
+        const defaultCanvas = await this.createCanvas('My First Canvas', userId, false);
+        return [defaultCanvas];
+      } catch (createError) {
+        console.error('❌ Error creating default canvas:', createError);
+        throw error;
+      }
     }
   }
 

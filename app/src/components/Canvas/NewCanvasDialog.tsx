@@ -58,7 +58,7 @@ export function NewCanvasDialog({ isOpen, onClose }: NewCanvasDialogProps) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="new-canvas-dialog-form">
+        <form id="new-canvas-form" onSubmit={handleSubmit} className="new-canvas-dialog-form">
           <div className="new-canvas-dialog-field">
             <label htmlFor="canvas-name">Canvas Name</label>
             <input
@@ -91,7 +91,9 @@ export function NewCanvasDialog({ isOpen, onClose }: NewCanvasDialogProps) {
               </span>
             </label>
           </div>
+        </form>
 
+        <div className="new-canvas-dialog-footer">
           <div className="new-canvas-dialog-actions">
             <button
               type="button"
@@ -103,13 +105,14 @@ export function NewCanvasDialog({ isOpen, onClose }: NewCanvasDialogProps) {
             </button>
             <button
               type="submit"
+              form="new-canvas-form"
               className="new-canvas-dialog-button create"
               disabled={isCreating || !name.trim()}
             >
               {isCreating ? 'Creating...' : 'Create Canvas'}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

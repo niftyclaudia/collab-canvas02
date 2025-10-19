@@ -125,6 +125,10 @@ export interface CanvasState {
   updateCanvasName: (name: string) => Promise<void>;
   deleteCurrentCanvas: () => Promise<void>;
   duplicateCurrentCanvas: (newName: string) => Promise<void>;
+  
+  // Dashboard state
+  showDashboard: boolean;
+  setShowDashboard: (show: boolean) => void;
   toggleCanvasSharing: () => Promise<void>;
 }
 
@@ -180,6 +184,9 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const [currentCanvas, setCurrentCanvas] = useState<Canvas | null>(null);
   const [availableCanvases, setAvailableCanvases] = useState<Canvas[]>([]);
   const [isLoadingCanvases, setIsLoadingCanvases] = useState<boolean>(true);
+  
+  // Dashboard state
+  const [showDashboard, setShowDashboard] = useState<boolean>(true);
   
   // Wrapper function to track manual deselection
   const setSelectedShapes = useCallback((shapeIds: string[]) => {
@@ -932,6 +939,9 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       
       setCurrentCanvas(canvas);
       
+      // Switch to canvas view
+      setShowDashboard(false);
+      
       // Clear current state
       setShapes([]);
       setGroups([]);
@@ -1093,13 +1103,8 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
         const canvases = await canvasService.getCanvases(user.uid);
         setAvailableCanvases(canvases);
         
-        // If no current canvas, switch to first available or create default
-        if (!currentCanvas && canvases.length > 0) {
-          await switchCanvas(canvases[0].id);
-        } else if (!currentCanvas && canvases.length === 0) {
-          // Create default canvas if none exist
-          await createNewCanvas('My Canvas', true);
-        }
+        // Don't automatically switch to canvas - let user choose from dashboard
+        // The dashboard will handle creating a default canvas if needed
       } catch (error) {
         console.error('Failed to load canvases:', error);
         showToast('Failed to load canvases', 'error');
@@ -1181,6 +1186,8 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     deleteCurrentCanvas,
     duplicateCurrentCanvas,
     toggleCanvasSharing,
+    showDashboard,
+    setShowDashboard,
   };
 
   return (

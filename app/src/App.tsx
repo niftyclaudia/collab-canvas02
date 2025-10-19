@@ -1,10 +1,12 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CanvasProvider } from './contexts/CanvasContext';
+import { useCanvas } from './hooks/useCanvas';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import AuthComponent from './components/Auth/AuthProvider';
 import AppShell from './components/Layout/AppShell';
 import Canvas from './components/Canvas/Canvas';
+import Dashboard from './components/Dashboard/Dashboard';
 import ToastContainer from './components/UI/ToastContainer';
 import ErrorBoundary from './components/UI/ErrorBoundary';
 import { AIService } from './services/aiService';
@@ -612,11 +614,24 @@ function AppContent() {
   return (
     <ErrorBoundary>
       <CanvasProvider>
-        <AppShell>
-          <Canvas />
-        </AppShell>
+        <AppContentWithCanvas />
       </CanvasProvider>
     </ErrorBoundary>
+  );
+}
+
+// Component that handles dashboard vs canvas routing
+function AppContentWithCanvas() {
+  const { showDashboard } = useCanvas();
+
+  if (showDashboard) {
+    return <Dashboard />;
+  }
+
+  return (
+    <AppShell>
+      <Canvas />
+    </AppShell>
   );
 }
 
