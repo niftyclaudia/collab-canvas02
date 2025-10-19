@@ -1,6 +1,7 @@
 import { useAuth } from '../../hooks/useAuth';
 import { usePresence } from '../../hooks/usePresence';
 import TeamIcons from './TeamIcons';
+import { CanvasSelector } from '../Canvas/CanvasSelector';
 
 export function Navbar() {
   const { user, logout, loading } = useAuth();
@@ -26,6 +27,7 @@ export function Navbar() {
             <div className="logo-icon">◆</div>
             <span className="logo-text">COLLABCANVAS</span>
           </div>
+          <CanvasSelector />
         </div>
 
         <div className="navbar-right">
