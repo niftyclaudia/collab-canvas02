@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useState, useEffect } from 'react';
+import React, { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { Stage, Layer, Rect, Line, Text, Group, Circle } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type Konva from 'konva';
@@ -49,6 +49,9 @@ export function Canvas() {
   
   // Track if Shift key is held for marquee selection
   const [isShiftHeld, setIsShiftHeld] = useState(false);
+  
+  // Debounce z-index operations to prevent rapid firing
+  const zIndexOperationRef = useRef<{ [key: string]: number }>({});
   
   // Rotation state management - consolidated into single object
   const [rotationState, setRotationState] = useState<{
@@ -156,6 +159,32 @@ export function Canvas() {
     groupShapes,
     ungroupShapes
   } = useCanvas();
+  
+  // Debounced z-index operation to prevent rapid firing
+  const debouncedZIndexOperation = useCallback((operation: () => Promise<void>, key: string) => {
+    const now = Date.now();
+    const lastOperation = zIndexOperationRef.current[key] || 0;
+    
+    // Debounce for 100ms to prevent rapid firing
+    if (now - lastOperation < 100) {
+      return;
+    }
+    
+    zIndexOperationRef.current[key] = now;
+    
+    // Store current selection to maintain it after operation
+    const currentSelection = selectedShapes.slice();
+    
+    operation().then(() => {
+      // Ensure the shape stays selected after z-index operation
+      if (currentSelection.length > 0) {
+        setSelectedShapes(currentSelection);
+        forceUpdate();
+      }
+    }).catch(error => {
+      console.error(`Z-index operation ${key} failed:`, error);
+    });
+  }, [selectedShapes, setSelectedShapes, forceUpdate]);
   
   // Toast hook for error messages
   const { showToast } = useToast();
@@ -2229,11 +2258,56 @@ useEffect(() => {
           }
         }
       }
+
+      // Z-index shortcuts - only work when a single shape is selected
+      if (selectedShapes.length === 1) {
+        const selectedShapeId = selectedShapes[0];
+        
+        // Handle Ctrl/Cmd + Shift + ] (Bring to Front)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === ']') {
+          e.preventDefault();
+          debouncedZIndexOperation(
+            () => canvasService.bringToFront(selectedShapeId),
+            'bringToFront'
+          );
+          return;
+        }
+
+        // Handle Ctrl/Cmd + Shift + [ (Send to Back)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '[') {
+          e.preventDefault();
+          debouncedZIndexOperation(
+            () => canvasService.sendToBack(selectedShapeId),
+            'sendToBack'
+          );
+          return;
+        }
+
+        // Handle Ctrl/Cmd + ] (Bring Forward)
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === ']') {
+          e.preventDefault();
+          debouncedZIndexOperation(
+            () => canvasService.bringForward(selectedShapeId),
+            'bringForward'
+          );
+          return;
+        }
+
+        // Handle Ctrl/Cmd + [ (Send Backward)
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === '[') {
+          e.preventDefault();
+          debouncedZIndexOperation(
+            () => canvasService.sendBackward(selectedShapeId),
+            'sendBackward'
+          );
+          return;
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [drawingState.isDrawing, cancelDrawing, selectedShapes, setSelectedShapes, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected, handleDuplicateShape, handleGroupShapes, handleUngroupShapes, editingTextId, shapes, applyBoldFormatting, applyItalicFormatting, applyUnderlineFormatting]);
+  }, [drawingState.isDrawing, cancelDrawing, selectedShapes, setSelectedShapes, unlockShape, handleCopyShape, handlePasteShape, handleSelectAll, handleDeleteSelected, handleDuplicateShape, handleGroupShapes, handleUngroupShapes, editingTextId, shapes, applyBoldFormatting, applyItalicFormatting, applyUnderlineFormatting, debouncedZIndexOperation]);
 
   // Clear preview dimensions once Firestore update is confirmed
   useEffect(() => {
@@ -2378,8 +2452,11 @@ useEffect(() => {
                 strokeWidth={1}
               />
             ))}
-            {/* Render existing shapes from Firestore */}
-            {shapes.map((shape) => {
+            {/* Render existing shapes from Firestore - sorted by zIndex */}
+            {useMemo(() => 
+              [...shapes].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0)), 
+              [shapes]
+            ).map((shape) => {
               const lockStatus = getShapeLockStatus(shape);
               
               // Use the actual lock status - the selection logic is handled elsewhere
@@ -3327,7 +3404,6 @@ useEffect(() => {
             />
           );
         })()}
-        
 
       </div>
     </div>

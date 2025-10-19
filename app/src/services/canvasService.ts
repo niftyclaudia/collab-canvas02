@@ -42,6 +42,8 @@ export interface Shape {
   fontWeight?: string;
   fontStyle?: string;
   textDecoration?: string;
+  // Z-index properties
+  zIndex: number; // Stacking order (higher = on top)
   // Grouping properties
   groupId?: string | null; // Reference to group (if grouped)
   createdBy: string;
@@ -69,6 +71,8 @@ export interface CreateShapeData {
   fontWeight?: string;
   fontStyle?: string;
   textDecoration?: string;
+  // Z-index properties
+  zIndex?: number; // Optional z-index (will be auto-assigned if not provided)
   createdBy: string;
 }
 
@@ -81,6 +85,7 @@ export interface UpdateShapeData {
   radius?: number; // For circles - radius of the circle
   color?: string;
   rotation?: number;
+  zIndex?: number; // Z-index updates
   lockedBy?: string | null;
   lockedAt?: Timestamp | null;
 }
@@ -120,9 +125,14 @@ export class CanvasService {
       const shapeId = this.generateShapeId();
       const now = serverTimestamp() as Timestamp;
       
+      // Get current z-index range to assign new z-index
+      const zIndexRange = await this.getZIndexRange();
+      const newZIndex = zIndexRange.max + 1;
+      
       const shape: Omit<Shape, 'id'> = {
         ...shapeData,
         rotation: shapeData.rotation ?? 0, // Default to 0 if not provided
+        zIndex: shapeData.zIndex ?? newZIndex, // Use provided zIndex or assign new one
         createdAt: now,
         updatedAt: now,
         lockedBy: null,
@@ -1305,6 +1315,146 @@ export class CanvasService {
       return unsubscribe;
     } catch (error) {
       console.error('❌ Error setting up groups subscription:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get current z-index range for all shapes
+   * @returns Object with min and max z-index values
+   */
+  async getZIndexRange(): Promise<{ min: number; max: number }> {
+    try {
+      const shapes = await this.getShapes();
+      if (shapes.length === 0) {
+        return { min: 0, max: 0 };
+      }
+
+      const zIndexes = shapes.map(shape => shape.zIndex || 0);
+      return {
+        min: Math.min(...zIndexes),
+        max: Math.max(...zIndexes)
+      };
+    } catch (error) {
+      console.error('❌ Error getting z-index range:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bring a shape to the front (highest z-index)
+   * @param shapeId - The shape ID to bring to front
+   */
+  async bringToFront(shapeId: string): Promise<void> {
+    try {
+      const zIndexRange = await this.getZIndexRange();
+      const newZIndex = zIndexRange.max + 1;
+      
+      await this.updateShape(shapeId, { zIndex: newZIndex });
+    } catch (error) {
+      console.error('❌ Error bringing shape to front:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send a shape to the back (lowest z-index)
+   * @param shapeId - The shape ID to send to back
+   */
+  async sendToBack(shapeId: string): Promise<void> {
+    try {
+      const zIndexRange = await this.getZIndexRange();
+      const newZIndex = zIndexRange.min - 1;
+      
+      await this.updateShape(shapeId, { zIndex: newZIndex });
+    } catch (error) {
+      console.error('❌ Error sending shape to back:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bring a shape forward one layer
+   * @param shapeId - The shape ID to bring forward
+   */
+  async bringForward(shapeId: string): Promise<void> {
+    try {
+      // Get current shape
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const currentShape = { id: shapeDoc.id, ...shapeDoc.data() } as Shape;
+      const currentZIndex = currentShape.zIndex || 0;
+      
+      // Get all shapes and find the next higher z-index
+      const shapes = await this.getShapes();
+      const higherShapes = shapes.filter(shape => (shape.zIndex || 0) > currentZIndex);
+      
+      if (higherShapes.length === 0) {
+        // Already at front, bring to absolute front
+        await this.bringToFront(shapeId);
+        return;
+      }
+      
+      // Find the shape with the lowest z-index that's still higher than current
+      const nextHigherShape = higherShapes.reduce((prev, current) => 
+        (current.zIndex || 0) < (prev.zIndex || 0) ? current : prev
+      );
+      
+      const newZIndex = nextHigherShape.zIndex || 0;
+      
+      // Swap z-indexes
+      await this.updateShape(shapeId, { zIndex: newZIndex });
+      await this.updateShape(nextHigherShape.id, { zIndex: currentZIndex });
+    } catch (error) {
+      console.error('❌ Error bringing shape forward:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send a shape backward one layer
+   * @param shapeId - The shape ID to send backward
+   */
+  async sendBackward(shapeId: string): Promise<void> {
+    try {
+      // Get current shape
+      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDoc = await getDoc(shapeDocRef);
+      
+      if (!shapeDoc.exists()) {
+        throw new Error('Shape not found');
+      }
+      
+      const currentShape = { id: shapeDoc.id, ...shapeDoc.data() } as Shape;
+      const currentZIndex = currentShape.zIndex || 0;
+      
+      // Get all shapes and find the next lower z-index
+      const shapes = await this.getShapes();
+      const lowerShapes = shapes.filter(shape => (shape.zIndex || 0) < currentZIndex);
+      
+      if (lowerShapes.length === 0) {
+        // Already at back, send to absolute back
+        await this.sendToBack(shapeId);
+        return;
+      }
+      
+      // Find the shape with the highest z-index that's still lower than current
+      const nextLowerShape = lowerShapes.reduce((prev, current) => 
+        (current.zIndex || 0) > (prev.zIndex || 0) ? current : prev
+      );
+      
+      const newZIndex = nextLowerShape.zIndex || 0;
+      
+      // Swap z-indexes
+      await this.updateShape(shapeId, { zIndex: newZIndex });
+      await this.updateShape(nextLowerShape.id, { zIndex: currentZIndex });
+    } catch (error) {
+      console.error('❌ Error sending shape backward:', error);
       throw error;
     }
   }

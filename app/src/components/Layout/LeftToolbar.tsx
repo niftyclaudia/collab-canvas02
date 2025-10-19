@@ -432,7 +432,95 @@ export function LeftToolbar() {
 
         <div className="toolbar-divider"></div>
 
-        {/* Section 6: Canvas Actions */}
+        {/* Section 6: Z-Index Controls - Show when a single shape is selected */}
+        {(() => {
+          if (selectedShapes.length !== 1) return null;
+          
+          const handleBringToFront = async () => {
+            if (!user || selectedShapes.length === 0) return;
+            try {
+              await canvasService.bringToFront(selectedShapes[0]);
+              showToast('Shape brought to front', 'success');
+            } catch (error) {
+              console.error('Failed to bring shape to front:', error);
+              showToast('Failed to bring shape to front', 'error');
+            }
+          };
+
+          const handleSendToBack = async () => {
+            if (!user || selectedShapes.length === 0) return;
+            try {
+              await canvasService.sendToBack(selectedShapes[0]);
+              showToast('Shape sent to back', 'success');
+            } catch (error) {
+              console.error('Failed to send shape to back:', error);
+              showToast('Failed to send shape to back', 'error');
+            }
+          };
+
+          const handleBringForward = async () => {
+            if (!user || selectedShapes.length === 0) return;
+            try {
+              await canvasService.bringForward(selectedShapes[0]);
+              showToast('Shape brought forward', 'success');
+            } catch (error) {
+              console.error('Failed to bring shape forward:', error);
+              showToast('Failed to bring shape forward', 'error');
+            }
+          };
+
+          const handleSendBackward = async () => {
+            if (!user || selectedShapes.length === 0) return;
+            try {
+              await canvasService.sendBackward(selectedShapes[0]);
+              showToast('Shape sent backward', 'success');
+            } catch (error) {
+              console.error('Failed to send shape backward:', error);
+              showToast('Failed to send shape backward', 'error');
+            }
+          };
+
+          return (
+            <div className="toolbar-section">
+              <button
+                type="button"
+                className="toolbar-icon-button"
+                onClick={handleBringToFront}
+                title="Bring to Front (Cmd/Ctrl+Shift+])"
+              >
+                <span style={{fontSize: '18px'}}>⬆️🔝</span>
+              </button>
+              <button
+                type="button"
+                className="toolbar-icon-button"
+                onClick={handleSendToBack}
+                title="Send to Back (Cmd/Ctrl+Shift+[)"
+              >
+                <span style={{fontSize: '18px'}}>⬇️⬇️</span>
+              </button>
+              <button
+                type="button"
+                className="toolbar-icon-button"
+                onClick={handleBringForward}
+                title="Bring Forward (Cmd/Ctrl+])"
+              >
+                <span style={{fontSize: '18px'}}>⬆️</span>
+              </button>
+              <button
+                type="button"
+                className="toolbar-icon-button"
+                onClick={handleSendBackward}
+                title="Send Backward (Cmd/Ctrl+[)"
+              >
+                <span style={{fontSize: '18px'}}>⬇️</span>
+              </button>
+            </div>
+          );
+        })()}
+
+        <div className="toolbar-divider"></div>
+
+        {/* Section 7: Canvas Actions */}
         <div className="toolbar-section">
           <button
             type="button"
