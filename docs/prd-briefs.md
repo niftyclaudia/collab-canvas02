@@ -134,28 +134,29 @@ Implement AI layout commands including "arrange in a row" for natural language s
 
 ## 🎯 Nice-to-Have (Optional - If Time Permits)
 
-### PR #5: Alignment Tools
+### PR #5: Complex AI Commands
 
-**Feature**: Align and distribute multiple shapes
+**Feature**: Multi-step AI commands for complex operations
 **Priority**: P1 - Nice-to-Have
-**Estimated Time**: 6-7 hours
+**Estimated Time**: 4-5 hours
 
 #### Brief
-Add alignment toolbar with 6 alignment options (left, center, right, top, middle, bottom) and 2 distribution options (horizontal, vertical). Appears when 2+ shapes selected.
+Implement complex AI commands like "create login form", "make 3x3 grid", and other multi-step operations.
 
 #### Key Requirements
-- Alignment toolbar: [⬅️ Left] [↔️ Center] [➡️ Right] | [⬆️ Top] [↕️ Middle] [⬇️ Bottom]
-- Distribution: [↔️ Distribute H] [↕️ Distribute V]
-- Calculate target positions based on alignment type
-- Batch update all shapes with new positions
-- Real-time sync of alignment changes
+- "Create login form" (6 elements: labels, inputs, button)
+- "Make 3x3 grid of squares" (9 shapes with proper spacing)
+- Multi-step command execution
+- Proper positioning and sizing
+- Error handling for complex operations
+- Success feedback for multi-step operations
 
 #### Acceptance Gates
-- [ ] User A selects 4 shapes, clicks "Align Left" → all align to leftmost edge
-- [ ] User B sees alignment in real-time
-- [ ] All 6 alignment options work
-- [ ] Distribution options work
-- [ ] Batch updates are atomic
+- [ ] "Create login form" creates 6 properly positioned elements
+- [ ] "Make 3x3 grid" creates 9 squares in grid
+- [ ] Multi-step operations complete successfully
+- [ ] Error handling works for failed steps
+- [ ] Success messages are clear
 
 ---
 
@@ -235,29 +236,28 @@ Optimize performance for large canvases with 500+ shapes and 5+ concurrent users
 
 ---
 
-### PR #9: Complex AI Commands
+### PR #9: Alignment Tools
 
-**Feature**: Multi-step AI commands for complex operations
+**Feature**: Align and distribute multiple shapes
 **Priority**: P1 - Nice-to-Have
-**Estimated Time**: 4-5 hours
+**Estimated Time**: 6-7 hours
 
 #### Brief
-Implement complex AI commands like "create login form", "make 3x3 grid", and other multi-step operations.
+Add alignment toolbar with 6 alignment options (left, center, right, top, middle, bottom) and 2 distribution options (horizontal, vertical). Appears when 2+ shapes selected.
 
 #### Key Requirements
-- "Create login form" (6 elements: labels, inputs, button)
-- "Make 3x3 grid of squares" (9 shapes with proper spacing)
-- Multi-step command execution
-- Proper positioning and sizing
-- Error handling for complex operations
-- Success feedback for multi-step operations
+- Alignment toolbar: [⬅️ Left] [↔️ Center] [➡️ Right] | [⬆️ Top] [↕️ Middle] [⬇️ Bottom]
+- Distribution: [↔️ Distribute H] [↕️ Distribute V]
+- Calculate target positions based on alignment type
+- Batch update all shapes with new positions
+- Real-time sync of alignment changes
 
 #### Acceptance Gates
-- [ ] "Create login form" creates 6 properly positioned elements
-- [ ] "Make 3x3 grid" creates 9 squares in grid
-- [ ] Multi-step operations complete successfully
-- [ ] Error handling works for failed steps
-- [ ] Success messages are clear
+- [ ] User A selects 4 shapes, clicks "Align Left" → all align to leftmost edge
+- [ ] User B sees alignment in real-time
+- [ ] All 6 alignment options work
+- [ ] Distribution options work
+- [ ] Batch updates are atomic
 
 ---
 
@@ -269,7 +269,7 @@ Implement complex AI commands like "create login form", "make 3x3 grid", and oth
 - **Focus**: Core collaborative design features
 
 ### Phase 3: Nice-to-Have (PRs #5-9)
-- Alignment Tools, Comments, Advanced Shortcuts, Performance, Complex AI
+- Complex AI, Comments, Advanced Shortcuts, Performance, Alignment Tools
 - **Time**: 25-34 hours
 - **Focus**: Polish and advanced features
 

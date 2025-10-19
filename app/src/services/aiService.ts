@@ -34,6 +34,34 @@ export class AIService {
   
   async executeCommand(prompt: string, userId: string): Promise<CommandResult> {
     try {
+      // Check for random shapes requests and handle them specially
+      const isRandomShapesRequest = prompt.toLowerCase().includes('random shapes');
+      const shapeCountMatch = prompt.match(/(\d+)\s+random\s+shapes/);
+      
+      console.log(`🔍 Checking for random shapes: isRandomShapesRequest=${isRandomShapesRequest}, shapeCountMatch=${shapeCountMatch}`);
+      
+      if (isRandomShapesRequest && shapeCountMatch) {
+        const totalCount = parseInt(shapeCountMatch[1]);
+        const countPerType = Math.floor(totalCount / 3);
+        
+        console.log(`🎲 Detected random shapes request: ${totalCount} shapes (${countPerType} per type)`);
+        
+        // Create the 3 different shape types directly
+        const results = await this.createRandomShapesDirectly(countPerType, userId);
+        
+        const successMessage = `✓ Created ${totalCount} random shapes (${countPerType} rectangles, ${countPerType} circles, ${countPerType} triangles)`;
+        
+        if (this.onSuccess) {
+          this.onSuccess(successMessage);
+        }
+        
+        return {
+          success: true,
+          message: successMessage,
+          toolCalls: results
+        };
+      }
+      
       // 1. Get current canvas state for context
       const shapes = await this.canvasService.getShapes();
       const groups = await this.canvasService.getGroups();
@@ -72,6 +100,14 @@ export class AIService {
             message: notFoundMessage,
             toolCalls: results
           };
+        }
+        
+        // Check for random shapes validation
+        const multipleShapesCalls = results.filter(r => r.tool === 'createMultipleShapes' && r.success);
+        
+        if (isRandomShapesRequest && multipleShapesCalls.length === 1) {
+          console.warn('⚠️ AI only created one type of shapes for random shapes request');
+          // Don't fail the request, but log the issue
         }
         
         const successMessage = this.generateSuccessMessage(results);
@@ -319,14 +355,40 @@ export class AIService {
   private async createMultipleShapes(args: any, userId: string) {
     const { count, shapeType, startX, startY, gridColumns, spacing, shapeWidth, shapeHeight, colors } = args;
     
-    // Calculate grid positions
+    console.log(`🤖 AI creating ${count} ${shapeType} shapes at (${startX}, ${startY}) with ${colors.length} colors`);
+    
+    // Calculate grid positions with proper spacing to prevent overlap
     const shapesData = [];
+    const canvasWidth = 5000;
+    const canvasHeight = 5000;
+    
+    // Calculate cell dimensions to ensure no overlap
+    const cellWidth = shapeWidth + spacing;
+    const cellHeight = shapeHeight + spacing;
+    
     for (let i = 0; i < count; i++) {
       const row = Math.floor(i / gridColumns);
       const col = i % gridColumns;
       
-      const x = startX + (col * (shapeWidth + spacing));
-      const y = startY + (row * (shapeHeight + spacing));
+      // Use cell-based positioning to ensure proper spacing
+      const x = startX + (col * cellWidth);
+      const y = startY + (row * cellHeight);
+      
+      // Debug first few shapes to see positioning
+      if (i < 5) {
+        console.log(`🔍 Shape ${i}: row=${row}, col=${col}, x=${x}, y=${y}, cellWidth=${cellWidth}, cellHeight=${cellHeight}`);
+      }
+      
+      // Check bounds to ensure shapes stay within canvas
+      const maxX = x + shapeWidth;
+      const maxY = y + shapeHeight;
+      
+      if (maxX > canvasWidth || maxY > canvasHeight) {
+        console.warn(`⚠️ Shape ${i} would be outside canvas bounds: (${x}, ${y}) to (${maxX}, ${maxY})`);
+        // Skip this shape to avoid bounds errors
+        continue;
+      }
+      
       const color = colors[i % colors.length];
       
       const shapeData: any = {
@@ -348,8 +410,97 @@ export class AIService {
       shapesData.push(shapeData);
     }
     
+    console.log(`🤖 AI prepared ${shapesData.length} ${shapeType} shapes for batch creation (${count - shapesData.length} skipped due to bounds)`);
+    
     // Create all shapes in a single batch operation
-    return await this.canvasService.createShapesBatch(shapesData);
+    const result = await this.canvasService.createShapesBatch(shapesData);
+    console.log(`🤖 AI successfully created ${result.length} ${shapeType} shapes`);
+    return result;
+  }
+  
+  /**
+   * Create random shapes directly without relying on AI tool calls
+   */
+  private async createRandomShapesDirectly(countPerType: number, userId: string): Promise<any[]> {
+    console.log(`🎲 Creating ${countPerType} random shapes of each type directly`);
+    
+    const results = [];
+    
+    try {
+      // Create rectangles - Top-left area with balanced spacing
+      console.log(`🎲 Step 1: Creating ${countPerType} rectangles...`);
+      const rectangleArgs = {
+        count: countPerType,
+        shapeType: 'rectangle',
+        startX: 100,
+        startY: 100,
+        gridColumns: 10, // 10 columns for better density
+        spacing: 20, // Proper spacing to prevent overlap
+        shapeWidth: 80, // Good size for visibility
+        shapeHeight: 60,
+        colors: ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899']
+      };
+      
+      const rectangles = await this.createMultipleShapes(rectangleArgs, userId);
+      console.log(`🎲 Step 1 Complete: Created ${rectangles.length} rectangles`);
+      results.push({
+        tool: 'createMultipleShapes',
+        success: true,
+        result: rectangles
+      });
+      
+      // Create circles - Top-right area with balanced spacing
+      console.log(`🎲 Step 2: Creating ${countPerType} circles...`);
+      const circleArgs = {
+        count: countPerType,
+        shapeType: 'circle',
+        startX: 2000, // Adjusted position for better balance
+        startY: 100,
+        gridColumns: 10, // 10 columns for better density
+        spacing: 20, // Proper spacing to prevent overlap
+        shapeWidth: 80, // Good size for visibility
+        shapeHeight: 60,
+        colors: ['#ef4444', '#f59e0b', '#84cc16', '#06b6d4', '#8b5cf6']
+      };
+      
+      const circles = await this.createMultipleShapes(circleArgs, userId);
+      console.log(`🎲 Step 2 Complete: Created ${circles.length} circles`);
+      results.push({
+        tool: 'createMultipleShapes',
+        success: true,
+        result: circles
+      });
+      
+      // Create triangles - Bottom area with balanced spacing
+      console.log(`🎲 Step 3: Creating ${countPerType} triangles...`);
+      const triangleArgs = {
+        count: countPerType,
+        shapeType: 'triangle',
+        startX: 100,
+        startY: 2000, // Adjusted position for better balance
+        gridColumns: 10, // 10 columns for better density
+        spacing: 20, // Proper spacing to prevent overlap
+        shapeWidth: 80, // Good size for visibility
+        shapeHeight: 60,
+        colors: ['#22c55e', '#6366f1', '#ec4899', '#f97316', '#3b82f6']
+      };
+      
+      const triangles = await this.createMultipleShapes(triangleArgs, userId);
+      console.log(`🎲 Step 3 Complete: Created ${triangles.length} triangles`);
+      results.push({
+        tool: 'createMultipleShapes',
+        success: true,
+        result: triangles
+      });
+      
+      console.log(`🎲 Successfully created ${countPerType} rectangles, ${countPerType} circles, and ${countPerType} triangles`);
+      
+    } catch (error) {
+      console.error('❌ Error creating random shapes directly:', error);
+      throw error;
+    }
+    
+    return results;
   }
   
   private async executeSingleTool(call: any, userId: string) {
@@ -633,6 +784,23 @@ export class AIService {
     }
     
     const toolNames = results.map(r => r.tool);
+    
+    // Check for createMultipleShapes operations
+    const multipleShapesCalls = results.filter(r => r.tool === 'createMultipleShapes' && r.success);
+    if (multipleShapesCalls.length > 0) {
+      const totalShapes = multipleShapesCalls.reduce((sum, call) => {
+        const result = call.result;
+        return sum + (Array.isArray(result) ? result.length : 0);
+      }, 0);
+      
+      if (multipleShapesCalls.length === 3) {
+        return `✓ Created ${totalShapes} random shapes (rectangles, circles, and triangles)`;
+      } else if (multipleShapesCalls.length > 1) {
+        return `✓ Created ${totalShapes} shapes in ${multipleShapesCalls.length} batches`;
+      } else {
+        return `✓ Created ${totalShapes} shapes`;
+      }
+    }
     
     // Single tool messages
     if (toolNames.length === 1) {

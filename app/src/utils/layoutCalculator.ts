@@ -265,7 +265,7 @@ export function calculateAlignment(
 }
 
 /**
- * Calculate grid layout for shapes (future enhancement)
+ * Calculate grid layout for shapes with proper spacing
  * @param shapeIds - Array of shape IDs to arrange
  * @param shapes - Array of all shapes
  * @param columns - Number of columns in the grid
@@ -293,10 +293,11 @@ export function calculateGridLayout(
   const positions: PositionUpdate[] = [];
   const rows = Math.ceil(targetShapes.length / columns);
   
-  // Calculate grid dimensions
+  // Calculate grid dimensions with proper cell spacing
   const maxWidth = Math.max(...targetShapes.map(s => s.width));
   const maxHeight = Math.max(...targetShapes.map(s => s.height));
   
+  // Use cell-based spacing to prevent overlap
   const cellWidth = maxWidth + spacing;
   const cellHeight = maxHeight + spacing;
   
@@ -309,7 +310,7 @@ export function calculateGridLayout(
   const startX = Math.max(0, (canvasWidth - gridWidth) / 2);
   const startY = Math.max(0, (canvasHeight - gridHeight) / 2);
   
-  // Position each shape in grid
+  // Position each shape in grid with proper cell spacing
   targetShapes.forEach((shape, index) => {
     const row = Math.floor(index / columns);
     const col = index % columns;
@@ -324,6 +325,45 @@ export function calculateGridLayout(
 }
 
 /**
+ * Calculate optimal grid parameters for shape creation
+ * @param count - Number of shapes to create
+ * @param shapeWidth - Width of each shape
+ * @param shapeHeight - Height of each shape
+ * @param maxColumns - Maximum number of columns
+ * @returns Optimal grid parameters
+ */
+export function calculateOptimalGridParams(
+  count: number,
+  shapeWidth: number,
+  shapeHeight: number,
+  maxColumns: number = 20
+): { columns: number; spacing: number; rows: number } {
+  // Calculate optimal columns based on count and canvas size
+  const canvasWidth = 5000;
+  const canvasHeight = 5000;
+  
+  // Start with a reasonable column count
+  let columns = Math.min(Math.ceil(Math.sqrt(count)), maxColumns);
+  
+  // Adjust columns to fit within canvas width
+  const minSpacing = 10; // Minimum spacing between shapes
+  const maxShapeWidth = shapeWidth + minSpacing;
+  
+  while (columns * maxShapeWidth > canvasWidth * 0.8 && columns > 1) {
+    columns--;
+  }
+  
+  const rows = Math.ceil(count / columns);
+  
+  // Calculate optimal spacing
+  const availableWidth = canvasWidth * 0.8; // Use 80% of canvas width
+  const totalShapeWidth = columns * shapeWidth;
+  const spacing = Math.max(minSpacing, (availableWidth - totalShapeWidth) / (columns - 1));
+  
+  return { columns, spacing, rows };
+}
+
+/**
  * Validate layout parameters
  * @param shapeIds - Array of shape IDs
  * @param shapes - Array of all shapes
@@ -334,7 +374,7 @@ export function validateLayoutInput(
   shapeIds: string[], 
   shapes: Shape[], 
   minShapes: number = 2, 
-  maxShapes: number = 50
+  maxShapes: number = 500
 ): void {
   if (!shapeIds || shapeIds.length < minShapes) {
     throw new Error(`At least ${minShapes} shapes are required`);

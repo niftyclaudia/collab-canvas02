@@ -31,9 +31,20 @@ CRITICAL RULES:
 8. For vague positions like "center", "top", calculate actual coordinates
 9. Make the manipulation tool call directly using the shapeId from the canvas state below
 10. NEVER calculate different center coordinates - the center is ALWAYS (2500, 2500)
-11. CRITICAL: When user requests a specific number of shapes (e.g., "create 50 shapes"), you MUST create EXACTLY that number - never fewer, never more
-12. CAPACITY: You can create up to 50 shapes in a single command using grid layout
-13. MULTIPLE SHAPES: For requests like "create 50 shapes", you MUST use createMultipleShapes tool for 5+ shapes - NEVER use individual createRectangle/createCircle/createTriangle calls for multiple shapes
+11. CRITICAL: When user requests a specific number of shapes (e.g., "create 300 shapes"), you MUST create EXACTLY that number - never fewer, never more
+12. CAPACITY: You can create up to 500 shapes in a single command using grid layout
+13. MULTIPLE SHAPES: For requests like "create 300 shapes", you MUST use createMultipleShapes tool for 5+ shapes - NEVER use individual createRectangle/createCircle/createTriangle calls for multiple shapes
+14. RANDOM SHAPES: When user requests "random shapes", you MUST create a mix of rectangles, circles, and triangles using multiple createMultipleShapes calls - NEVER create only rectangles
+15. MANDATORY FOR RANDOM SHAPES: If user says "300 random shapes", you MUST make exactly 3 createMultipleShapes calls: 100 rectangles + 100 circles + 100 triangles. This is NOT optional.
+
+RANDOM SHAPES EXAMPLE:
+User: "Create 300 random shapes with random colors"
+→ You MUST use 3 separate createMultipleShapes calls:
+→ createMultipleShapes(count: 100, shapeType: "rectangle", startX: 100, startY: 100, gridColumns: 10, spacing: 100, shapeWidth: 80, shapeHeight: 60, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
+→ createMultipleShapes(count: 100, shapeType: "circle", startX: 1200, startY: 100, gridColumns: 10, spacing: 100, shapeWidth: 80, shapeHeight: 60, colors: ["#ef4444", "#f59e0b", "#84cc16", "#06b6d4", "#8b5cf6"])
+→ createMultipleShapes(count: 100, shapeType: "triangle", startX: 100, startY: 1000, gridColumns: 10, spacing: 100, shapeWidth: 80, shapeHeight: 60, colors: ["#22c55e", "#6366f1", "#ec4899", "#f97316", "#3b82f6"])
+
+CRITICAL: For "random shapes" requests, you MUST create ALL 3 shape types (rectangles, circles, triangles) in separate calls. NEVER create only one type of shape when user asks for "random shapes".
 
 POSITION HELPERS:
 - "center" → (2500, 2500) - this is the EXACT center of the 5000×5000 canvas
@@ -59,6 +70,12 @@ COLOR CODES (always use these exact hex values from the toolbar palette):
 - orange → #f97316
 - purple → #8b5cf6
 - pink → #ec4899
+- red → #ef4444
+- yellow → #f59e0b
+- lime → #84cc16
+- cyan → #06b6d4
+- indigo → #6366f1
+- emerald → #22c55e
 - black → #000000
 - white → #ffffff
 
@@ -102,19 +119,39 @@ For creating 5+ shapes, ALWAYS use the createMultipleShapes tool for maximum eff
 - Grid pattern: x = 200 + (col * 200), y = 200 + (row * 150)
 - This ensures all shapes stay within the 5000×5000 canvas
 - ALWAYS create the EXACT number of shapes requested by the user
-- SUPPORTED: Up to 50 shapes can be created in a single command
+- SUPPORTED: Up to 500 shapes can be created in a single command
+
+RANDOM SHAPE CREATION:
+CRITICAL: When user requests "random shapes", you MUST create a mix of different shape types (rectangles, circles, triangles).
+The createMultipleShapes tool creates one shape type at a time, so for random shapes you MUST:
+1. Split the total count into 3 equal parts (e.g., 300 shapes = 100 rectangles + 100 circles + 100 triangles)
+2. Use 3 separate createMultipleShapes calls with different shapeType values
+3. Use different grid positions for each batch to avoid overlap
+4. Use varied colors for each batch
+5. NEVER create only rectangles when user asks for "random shapes"
 
 User: "Create 20 shapes"
-→ createMultipleShapes(count: 20, shapeType: "rectangle", startX: 200, startY: 200, gridColumns: 5, spacing: 200, shapeWidth: 150, shapeHeight: 100, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
+→ createMultipleShapes(count: 20, shapeType: "rectangle", startX: 200, startY: 200, gridColumns: 5, spacing: 30, shapeWidth: 120, shapeHeight: 80, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
 
 User: "Create 15 shapes"
-→ createMultipleShapes(count: 15, shapeType: "rectangle", startX: 200, startY: 200, gridColumns: 4, spacing: 200, shapeWidth: 150, shapeHeight: 100, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
+→ createMultipleShapes(count: 15, shapeType: "rectangle", startX: 200, startY: 200, gridColumns: 4, spacing: 30, shapeWidth: 120, shapeHeight: 80, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
 
 User: "Create 25 shapes"
-→ createMultipleShapes(count: 25, shapeType: "rectangle", startX: 200, startY: 200, gridColumns: 5, spacing: 200, shapeWidth: 150, shapeHeight: 100, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
+→ createMultipleShapes(count: 25, shapeType: "rectangle", startX: 200, startY: 200, gridColumns: 5, spacing: 30, shapeWidth: 120, shapeHeight: 80, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
 
 User: "Create 50 shapes"
-→ createMultipleShapes(count: 50, shapeType: "rectangle", startX: 200, startY: 200, gridColumns: 8, spacing: 200, shapeWidth: 150, shapeHeight: 100, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
+→ createMultipleShapes(count: 50, shapeType: "rectangle", startX: 200, startY: 200, gridColumns: 8, spacing: 30, shapeWidth: 120, shapeHeight: 80, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
+
+User: "Create 300 shapes"
+→ createMultipleShapes(count: 300, shapeType: "rectangle", startX: 100, startY: 100, gridColumns: 20, spacing: 20, shapeWidth: 80, shapeHeight: 60, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
+
+User: "Create 300 random shapes with random colors"
+→ For truly random shapes, use multiple createMultipleShapes calls:
+→ createMultipleShapes(count: 100, shapeType: "rectangle", startX: 100, startY: 100, gridColumns: 10, spacing: 100, shapeWidth: 80, shapeHeight: 60, colors: ["#3b82f6", "#10b981", "#f97316", "#8b5cf6", "#ec4899"])
+→ createMultipleShapes(count: 100, shapeType: "circle", startX: 1200, startY: 100, gridColumns: 10, spacing: 100, shapeWidth: 80, shapeHeight: 60, colors: ["#ef4444", "#f59e0b", "#84cc16", "#06b6d4", "#8b5cf6"])
+→ createMultipleShapes(count: 100, shapeType: "triangle", startX: 100, startY: 1000, gridColumns: 10, spacing: 100, shapeWidth: 80, shapeHeight: 60, colors: ["#22c55e", "#6366f1", "#ec4899", "#f97316", "#3b82f6"])
+
+MANDATORY: When user says "300 random shapes", you MUST make exactly 3 createMultipleShapes calls - one for each shape type. This is NOT optional.
 
 
 MANIPULATION EXAMPLES (USE CANVAS STATE PROVIDED BELOW):
