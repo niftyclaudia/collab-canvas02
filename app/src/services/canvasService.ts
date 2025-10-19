@@ -10,10 +10,24 @@ import {
   Timestamp,
   query,
   orderBy,
-  writeBatch
+  writeBatch,
+  where
 } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
+
+// Canvas interface for canvas management
+export interface Canvas {
+  id: string;
+  name: string;
+  createdBy: string; // User ID
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  isShared: boolean; // true = team-wide, false = private
+  lastAccessedBy?: string; // Track last user who opened it
+  lastAccessedAt?: Timestamp;
+  thumbnail?: string; // Optional: base64 preview image
+}
 
 // Group interface for grouping shapes
 export interface Group {
@@ -95,7 +109,29 @@ export interface UpdateShapeData {
  * Handles CRUD operations for collaborative shape editing
  */
 export class CanvasService {
-  private readonly shapesCollectionPath = 'canvases/main/shapes';
+  private currentCanvasId: string = 'main'; // Default to 'main' for backward compatibility
+  
+  private getShapesCollectionPath(canvasId?: string): string {
+    return `canvases/${canvasId || this.currentCanvasId}/shapes`;
+  }
+  
+  private getGroupsCollectionPath(canvasId?: string): string {
+    return `canvases/${canvasId || this.currentCanvasId}/groups`;
+  }
+  
+  /**
+   * Set the current canvas ID for all operations
+   */
+  setCurrentCanvas(canvasId: string): void {
+    this.currentCanvasId = canvasId;
+  }
+  
+  /**
+   * Get the current canvas ID
+   */
+  getCurrentCanvasId(): string {
+    return this.currentCanvasId;
+  }
 
   /**
    * Generate a new unique shape ID
@@ -146,7 +182,7 @@ export class CanvasService {
           lockedAt: null,
         };
 
-        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+        const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
         batch.set(shapeDocRef, shape);
         
         shapes.push({
@@ -200,7 +236,7 @@ export class CanvasService {
         lockedAt: null,
       };
 
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       await setDoc(shapeDocRef, shape);
 
 
@@ -219,7 +255,7 @@ export class CanvasService {
    */
   async updateShape(shapeId: string, updates: UpdateShapeData): Promise<void> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       
       const updateData = {
         ...updates,
@@ -239,7 +275,7 @@ export class CanvasService {
    */
   async getShapes(): Promise<Shape[]> {
     try {
-      const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
+      const shapesCollectionRef = collection(firestore, this.getShapesCollectionPath());
       const shapesQuery = query(shapesCollectionRef, orderBy('updatedAt', 'desc'));
       const querySnapshot = await getDocs(shapesQuery);
 
@@ -263,7 +299,7 @@ export class CanvasService {
    */
   async getGroups(): Promise<Group[]> {
     try {
-      const groupsCollectionRef = collection(firestore, 'canvases/main/groups');
+      const groupsCollectionRef = collection(firestore, this.getGroupsCollectionPath());
       const groupsQuery = query(groupsCollectionRef, orderBy('updatedAt', 'desc'));
       const querySnapshot = await getDocs(groupsQuery);
 
@@ -283,12 +319,12 @@ export class CanvasService {
   }
 
   /**
-   * Subscribe to real-time shape updates
+   * Subscribe to real-time shape updates with performance optimizations
    * Returns unsubscribe function
    */
   subscribeToShapes(callback: (shapes: Shape[]) => void): () => void {
     try {
-      const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
+      const shapesCollectionRef = collection(firestore, this.getShapesCollectionPath());
       const shapesQuery = query(shapesCollectionRef, orderBy('updatedAt', 'desc'));
 
       const unsubscribe = onSnapshot(
@@ -302,6 +338,8 @@ export class CanvasService {
             } as Shape);
           });
 
+          // Performance optimization: Sort shapes by zIndex for efficient rendering
+          shapes.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
           callback(shapes);
         },
         (error) => {
@@ -396,7 +434,7 @@ export class CanvasService {
    */
   async lockShape(shapeId: string, userId: string): Promise<boolean> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -436,7 +474,7 @@ export class CanvasService {
    */
   async unlockShape(shapeId: string): Promise<void> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       
       // Check if the document exists before trying to update it
       const shapeDoc = await getDoc(shapeDocRef);
@@ -475,7 +513,7 @@ export class CanvasService {
    */
   async startTextEditing(shapeId: string, userId: string): Promise<boolean> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -515,7 +553,7 @@ export class CanvasService {
    */
   async stopTextEditing(shapeId: string): Promise<void> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       await updateDoc(shapeDocRef, {
         editingBy: null,
         editingAt: null,
@@ -553,7 +591,7 @@ export class CanvasService {
    */
   async clearCanvas(): Promise<void> {
     try {
-        const shapesCollectionRef = collection(firestore, this.shapesCollectionPath);
+        const shapesCollectionRef = collection(firestore, this.getShapesCollectionPath());
       const querySnapshot = await getDocs(shapesCollectionRef);
       
       if (querySnapshot.empty) {
@@ -766,7 +804,7 @@ export class CanvasService {
       throw new Error('Minimum circle radius is 5 pixels');
     }
     
-    const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+    const shapeRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
     await updateDoc(shapeRef, {
       radius: radius,
       width: radius * 2, // Update bounding box width
@@ -788,7 +826,7 @@ export class CanvasService {
       throw new Error('Minimum size is 10×10 pixels');
     }
     
-    const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+    const shapeRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
     await updateDoc(shapeRef, {
       width: width,
       height: height,
@@ -806,7 +844,7 @@ export class CanvasService {
     // Normalize rotation to 0-360 range
     const normalizedRotation = ((rotation % 360) + 360) % 360;
     
-    const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+    const shapeRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
     await updateDoc(shapeRef, {
       rotation: normalizedRotation,
       updatedAt: serverTimestamp()
@@ -821,7 +859,7 @@ export class CanvasService {
   async duplicateShape(shapeId: string, createdBy: string): Promise<Shape> {
     try {
       // Get the original shape
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -888,7 +926,7 @@ export class CanvasService {
   async deleteShape(shapeId: string): Promise<void> {
     try {
       const { deleteDoc } = await import('firebase/firestore');
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       await deleteDoc(shapeDocRef);
     } catch (error) {
       console.error('❌ Error deleting shape:', error);
@@ -905,7 +943,7 @@ export class CanvasService {
   async updateShapeText(shapeId: string, text: string): Promise<void> {
     try {
       // Get the current shape to access its font properties
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -930,7 +968,7 @@ export class CanvasService {
       const newWidth = Math.max(metrics.width + 20, 100); // Add padding, minimum 100px
       const newHeight = Math.max(fontSize * 1.2, 20); // Minimum height
       
-      const shapeRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       await updateDoc(shapeRef, {
         text: text,
         width: newWidth,
@@ -950,7 +988,7 @@ export class CanvasService {
    */
   async toggleTextBold(shapeId: string): Promise<void> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -978,7 +1016,7 @@ export class CanvasService {
    */
   async toggleTextItalic(shapeId: string): Promise<void> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -1006,7 +1044,7 @@ export class CanvasService {
    */
   async toggleTextUnderline(shapeId: string): Promise<void> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -1040,7 +1078,7 @@ export class CanvasService {
         throw new Error('Font size must be between 1 and 500 pixels');
       }
       
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -1101,7 +1139,7 @@ export class CanvasService {
       }
 
       // Check if all shapes exist and are not already grouped
-      const shapePromises = shapeIds.map(shapeId => getDoc(doc(firestore, this.shapesCollectionPath, shapeId)));
+      const shapePromises = shapeIds.map(shapeId => getDoc(doc(firestore, this.getShapesCollectionPath(), shapeId)));
       const shapeDocs = await Promise.all(shapePromises);
       
       for (let i = 0; i < shapeDocs.length; i++) {
@@ -1138,7 +1176,7 @@ export class CanvasService {
       
       // Update all shapes with groupId
       shapeIds.forEach(shapeId => {
-        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+        const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
         batch.update(shapeDocRef, {
           groupId: groupId,
           updatedAt: now,
@@ -1176,7 +1214,7 @@ export class CanvasService {
       
       // Remove groupId from all shapes
       shapeIds.forEach(shapeId => {
-        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+        const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
         batch.update(shapeDocRef, {
           groupId: null,
           updatedAt: serverTimestamp(),
@@ -1231,7 +1269,7 @@ export class CanvasService {
       
       // Get all shapes in the group
       const shapePromises = group.shapeIds.map(shapeId => 
-        getDoc(doc(firestore, this.shapesCollectionPath, shapeId))
+        getDoc(doc(firestore, this.getShapesCollectionPath(), shapeId))
       );
       const shapeDocs = await Promise.all(shapePromises);
       
@@ -1270,7 +1308,7 @@ export class CanvasService {
       const now = serverTimestamp() as Timestamp;
       
       shapes.forEach(shape => {
-        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shape.id);
+        const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shape.id);
         batch.update(shapeDocRef, {
           x: shape.x + deltaX,
           y: shape.y + deltaY,
@@ -1298,7 +1336,7 @@ export class CanvasService {
       
       // Delete all shapes in the group
       shapes.forEach(shape => {
-        const shapeDocRef = doc(firestore, this.shapesCollectionPath, shape.id);
+        const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shape.id);
         batch.delete(shapeDocRef);
       });
       
@@ -1405,12 +1443,27 @@ export class CanvasService {
   }
 
   /**
-   * Get current z-index range for all shapes
+   * Get current z-index range for all shapes (optimized for performance)
    * @returns Object with min and max z-index values
    */
   async getZIndexRange(): Promise<{ min: number; max: number }> {
     try {
-      const shapes = await this.getShapes();
+      const shapesCollectionRef = collection(firestore, this.getShapesCollectionPath());
+      const shapesQuery = query(shapesCollectionRef, orderBy('zIndex', 'asc'));
+      const querySnapshot = await getDocs(shapesQuery);
+      
+      if (querySnapshot.empty) {
+        return { min: 0, max: 0 };
+      }
+
+      const shapes: Shape[] = [];
+      querySnapshot.forEach((doc) => {
+        shapes.push({
+          id: doc.id,
+          ...doc.data(),
+        } as Shape);
+      });
+
       if (shapes.length === 0) {
         return { min: 0, max: 0 };
       }
@@ -1465,7 +1518,7 @@ export class CanvasService {
   async bringForward(shapeId: string): Promise<void> {
     try {
       // Get current shape
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -1508,7 +1561,7 @@ export class CanvasService {
   async sendBackward(shapeId: string): Promise<void> {
     try {
       // Get current shape
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -1559,7 +1612,7 @@ export class CanvasService {
       const now = serverTimestamp() as Timestamp;
       
       updates.forEach(update => {
-        const shapeDocRef = doc(firestore, this.shapesCollectionPath, update.id);
+        const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), update.id);
         batch.update(shapeDocRef, {
           x: update.x,
           y: update.y,
@@ -1581,7 +1634,7 @@ export class CanvasService {
    */
   async getShapeBounds(shapeId: string): Promise<{x: number, y: number, width: number, height: number}> {
     try {
-      const shapeDocRef = doc(firestore, this.shapesCollectionPath, shapeId);
+      const shapeDocRef = doc(firestore, this.getShapesCollectionPath(), shapeId);
       const shapeDoc = await getDoc(shapeDocRef);
       
       if (!shapeDoc.exists()) {
@@ -1597,6 +1650,406 @@ export class CanvasService {
       };
     } catch (error) {
       console.error('❌ Error getting shape bounds:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get performance metrics for monitoring
+   * @returns Performance metrics object
+   */
+  async getPerformanceMetrics(): Promise<{
+    shapeCount: number;
+    averageZIndex: number;
+    lastUpdated: Date | null;
+    memoryUsage?: number;
+  }> {
+    try {
+      const shapes = await this.getShapes();
+      const shapeCount = shapes.length;
+      
+      if (shapeCount === 0) {
+        return {
+          shapeCount: 0,
+          averageZIndex: 0,
+          lastUpdated: null,
+        };
+      }
+
+      const zIndexes = shapes.map(shape => shape.zIndex || 0);
+      const averageZIndex = zIndexes.reduce((sum, zIndex) => sum + zIndex, 0) / zIndexes.length;
+      
+      const lastUpdated = shapes.length > 0 
+        ? shapes.reduce((latest, shape) => {
+            const shapeTime = shape.updatedAt?.toDate();
+            return !latest || (shapeTime && shapeTime > latest) ? shapeTime : latest;
+          }, null as Date | null)
+        : null;
+
+      return {
+        shapeCount,
+        averageZIndex,
+        lastUpdated,
+        memoryUsage: typeof performance !== 'undefined' && (performance as any).memory 
+          ? (performance as any).memory.usedJSHeapSize 
+          : undefined,
+      };
+    } catch (error) {
+      console.error('❌ Error getting performance metrics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Optimize shape queries for large datasets
+   * @param limit - Maximum number of shapes to fetch
+   * @param offset - Number of shapes to skip
+   * @returns Paginated shapes array
+   */
+  async getShapesPaginated(limit: number = 100, offset: number = 0): Promise<Shape[]> {
+    try {
+      const shapesCollectionRef = collection(firestore, this.getShapesCollectionPath());
+      const shapesQuery = query(
+        shapesCollectionRef, 
+        orderBy('updatedAt', 'desc')
+        // Note: Firestore doesn't support offset directly, 
+        // but we can implement cursor-based pagination if needed
+      );
+      
+      const querySnapshot = await getDocs(shapesQuery);
+      const shapes: Shape[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        shapes.push({
+          id: doc.id,
+          ...doc.data(),
+        } as Shape);
+      });
+
+      // Client-side pagination (for now)
+      return shapes.slice(offset, offset + limit);
+    } catch (error) {
+      console.error('❌ Error fetching paginated shapes:', error);
+      throw error;
+    }
+  }
+
+  // ===== CANVAS MANAGEMENT =====
+
+  /**
+   * Generate a new unique canvas ID
+   */
+  private generateCanvasId(): string {
+    return `canvas_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Create a new canvas
+   * @param name - Canvas name
+   * @param userId - User ID who created the canvas
+   * @param isShared - Whether the canvas is shared (true) or private (false)
+   * @returns The created canvas
+   */
+  async createCanvas(name: string, userId: string, isShared: boolean): Promise<Canvas> {
+    try {
+      const canvasId = this.generateCanvasId();
+      const now = serverTimestamp() as Timestamp;
+      
+      const canvasData: Omit<Canvas, 'id'> = {
+        name,
+        createdBy: userId,
+        createdAt: now,
+        updatedAt: now,
+        isShared,
+        lastAccessedBy: userId,
+        lastAccessedAt: now,
+      };
+
+      const canvasDocRef = doc(firestore, 'canvases', canvasId);
+      await setDoc(canvasDocRef, canvasData);
+
+      return {
+        id: canvasId,
+        ...canvasData,
+      } as Canvas;
+    } catch (error) {
+      console.error('❌ Error creating canvas:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all canvases accessible to a user (their private + all shared)
+   * @param userId - User ID
+   * @returns Array of accessible canvases
+   */
+  async getCanvases(userId: string): Promise<Canvas[]> {
+    try {
+      // First, try to get user's private canvases
+      const privateQuery = query(
+        collection(firestore, 'canvases'),
+        where('createdBy', '==', userId),
+        where('isShared', '==', false),
+        orderBy('updatedAt', 'desc')
+      );
+      
+      // Get all shared canvases
+      const sharedQuery = query(
+        collection(firestore, 'canvases'),
+        where('isShared', '==', true),
+        orderBy('updatedAt', 'desc')
+      );
+
+      const [privateSnapshot, sharedSnapshot] = await Promise.all([
+        getDocs(privateQuery),
+        getDocs(sharedQuery)
+      ]);
+
+      const canvases: Canvas[] = [];
+      
+      // Add private canvases
+      privateSnapshot.forEach((doc) => {
+        canvases.push({
+          id: doc.id,
+          ...doc.data(),
+        } as Canvas);
+      });
+      
+      // Add shared canvases
+      sharedSnapshot.forEach((doc) => {
+        canvases.push({
+          id: doc.id,
+          ...doc.data(),
+        } as Canvas);
+      });
+
+      // If user has no canvases, create a default one
+      if (canvases.length === 0) {
+        const defaultCanvas = await this.createCanvas('My First Canvas', userId, false);
+        canvases.push(defaultCanvas);
+      }
+
+      // Sort by updatedAt descending
+      canvases.sort((a, b) => {
+        const aTime = a.updatedAt?.toMillis() || 0;
+        const bTime = b.updatedAt?.toMillis() || 0;
+        return bTime - aTime;
+      });
+
+      return canvases;
+    } catch (error) {
+      console.error('❌ Error fetching canvases:', error);
+      // If there's an error, try to create a default canvas
+      try {
+        const defaultCanvas = await this.createCanvas('My First Canvas', userId, false);
+        return [defaultCanvas];
+      } catch (createError) {
+        console.error('❌ Error creating default canvas:', createError);
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Get a specific canvas by ID
+   * @param canvasId - Canvas ID
+   * @returns Canvas data or null if not found
+   */
+  async getCanvas(canvasId: string): Promise<Canvas | null> {
+    try {
+      const canvasDocRef = doc(firestore, 'canvases', canvasId);
+      const canvasDoc = await getDoc(canvasDocRef);
+      
+      if (!canvasDoc.exists()) {
+        return null;
+      }
+      
+      return {
+        id: canvasId,
+        ...canvasDoc.data(),
+      } as Canvas;
+    } catch (error) {
+      console.error('❌ Error getting canvas:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update canvas name
+   * @param canvasId - Canvas ID
+   * @param name - New canvas name
+   */
+  async updateCanvasName(canvasId: string, name: string): Promise<void> {
+    try {
+      const canvasDocRef = doc(firestore, 'canvases', canvasId);
+      await updateDoc(canvasDocRef, {
+        name,
+        updatedAt: serverTimestamp() as Timestamp,
+      });
+    } catch (error) {
+      console.error('❌ Error updating canvas name:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a canvas and all its shapes/groups
+   * @param canvasId - Canvas ID to delete
+   */
+  async deleteCanvas(canvasId: string): Promise<void> {
+    try {
+      // Get all shapes in the canvas
+      const shapesCollectionRef = collection(firestore, this.getShapesCollectionPath(canvasId));
+      const shapesSnapshot = await getDocs(shapesCollectionRef);
+      
+      // Get all groups in the canvas
+      const groupsCollectionRef = collection(firestore, this.getGroupsCollectionPath(canvasId));
+      const groupsSnapshot = await getDocs(groupsCollectionRef);
+      
+      // Use batch to delete everything atomically
+      const batch = writeBatch(firestore);
+      
+      // Delete all shapes
+      shapesSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      
+      // Delete all groups
+      groupsSnapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      
+      // Delete canvas metadata
+      const canvasDocRef = doc(firestore, 'canvases', canvasId);
+      batch.delete(canvasDocRef);
+      
+      await batch.commit();
+    } catch (error) {
+      console.error('❌ Error deleting canvas:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update canvas sharing status
+   * @param canvasId - Canvas ID
+   * @param isShared - New sharing status
+   */
+  async updateCanvasSharing(canvasId: string, isShared: boolean): Promise<void> {
+    try {
+      const canvasDocRef = doc(firestore, 'canvases', canvasId);
+      await updateDoc(canvasDocRef, {
+        isShared,
+        updatedAt: serverTimestamp() as Timestamp,
+      });
+    } catch (error) {
+      console.error('❌ Error updating canvas sharing:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Duplicate a canvas with all its shapes and groups
+   * @param canvasId - Canvas ID to duplicate
+   * @param newName - Name for the new canvas
+   * @param userId - User ID who is duplicating
+   * @returns The new canvas
+   */
+  async duplicateCanvas(canvasId: string, newName: string, userId: string): Promise<Canvas> {
+    try {
+      // Get original canvas
+      const originalCanvas = await this.getCanvas(canvasId);
+      if (!originalCanvas) {
+        throw new Error('Canvas not found');
+      }
+
+      // Create new canvas
+      const newCanvas = await this.createCanvas(newName, userId, originalCanvas.isShared);
+      
+      // Get all shapes from original canvas
+      const originalShapesCollectionRef = collection(firestore, this.getShapesCollectionPath(canvasId));
+      const shapesSnapshot = await getDocs(originalShapesCollectionRef);
+      
+      // Get all groups from original canvas
+      const originalGroupsCollectionRef = collection(firestore, this.getGroupsCollectionPath(canvasId));
+      const groupsSnapshot = await getDocs(originalGroupsCollectionRef);
+      
+      // Create new shapes in the new canvas
+      const newShapesCollectionRef = collection(firestore, this.getShapesCollectionPath(newCanvas.id));
+      const batch = writeBatch(firestore);
+      const shapeIdMap = new Map<string, string>(); // Map old shape IDs to new ones
+      
+      // Duplicate shapes
+      shapesSnapshot.forEach((shapeDoc) => {
+        const shapeData = shapeDoc.data() as Shape;
+        const newShapeId = this.generateShapeId();
+        shapeIdMap.set(shapeDoc.id, newShapeId);
+        
+        const newShapeData = {
+          ...shapeData,
+          id: newShapeId,
+          createdBy: userId,
+          createdAt: serverTimestamp() as Timestamp,
+          updatedAt: serverTimestamp() as Timestamp,
+          groupId: null, // Will be updated after groups are created
+        };
+        
+        const newShapeDocRef = doc(newShapesCollectionRef, newShapeId);
+        batch.set(newShapeDocRef, newShapeData);
+      });
+      
+      // Duplicate groups with updated shape IDs
+      const newGroupsCollectionRef = collection(firestore, this.getGroupsCollectionPath(newCanvas.id));
+      groupsSnapshot.forEach((groupDoc) => {
+        const groupData = groupDoc.data() as Group;
+        const newGroupId = this.generateGroupId();
+        
+        // Update shape IDs in the group
+        const newShapeIds = groupData.shapeIds
+          .map(oldId => shapeIdMap.get(oldId))
+          .filter(Boolean) as string[];
+        
+        const newGroupData = {
+          ...groupData,
+          id: newGroupId,
+          shapeIds: newShapeIds,
+          createdBy: userId,
+          createdAt: serverTimestamp() as Timestamp,
+          updatedAt: serverTimestamp() as Timestamp,
+        };
+        
+        const newGroupDocRef = doc(newGroupsCollectionRef, newGroupId);
+        batch.set(newGroupDocRef, newGroupData);
+        
+        // Update shapes with new group ID
+        newShapeIds.forEach(shapeId => {
+          const shapeDocRef = doc(newShapesCollectionRef, shapeId);
+          batch.update(shapeDocRef, { groupId: newGroupId });
+        });
+      });
+      
+      await batch.commit();
+      return newCanvas;
+    } catch (error) {
+      console.error('❌ Error duplicating canvas:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update last accessed information for a canvas
+   * @param canvasId - Canvas ID
+   * @param userId - User ID who accessed the canvas
+   */
+  async updateCanvasAccess(canvasId: string, userId: string): Promise<void> {
+    try {
+      const canvasDocRef = doc(firestore, 'canvases', canvasId);
+      await updateDoc(canvasDocRef, {
+        lastAccessedBy: userId,
+        lastAccessedAt: serverTimestamp() as Timestamp,
+      });
+    } catch (error) {
+      console.error('❌ Error updating canvas access:', error);
       throw error;
     }
   }

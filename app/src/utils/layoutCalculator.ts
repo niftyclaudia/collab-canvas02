@@ -73,6 +73,10 @@ export function calculateRowLayout(
   const canvasWidth = 5000; // Assuming 5000px canvas width
   const startX = Math.max(0, (canvasWidth - totalWidth) / 2);
   
+  // Calculate middle Y position (average Y of all shapes, centered)
+  const avgY = targetShapes.reduce((sum, shape) => sum + shape.y, 0) / targetShapes.length;
+  const middleY = avgY; // Could also use canvas center: 2500
+  
   // Position each shape
   const positions: PositionUpdate[] = [];
   let currentX = startX;
@@ -81,9 +85,61 @@ export function calculateRowLayout(
     positions.push({ 
       id: shape.id, 
       x: currentX, 
-      y: shape.y // Keep original y position
+      y: middleY - shape.height / 2 // Middle-align vertically
     });
     currentX += shape.width + spacing;
+  });
+  
+  return positions;
+}
+
+/**
+ * Calculate vertical column layout for shapes
+ * @param shapeIds - Array of shape IDs to arrange
+ * @param shapes - Array of all shapes
+ * @param spacing - Spacing between shapes (default 20px)
+ * @returns Array of position updates
+ */
+export function calculateColumnLayout(
+  shapeIds: string[], 
+  shapes: Shape[], 
+  spacing: number = 20
+): PositionUpdate[] {
+  // Validate input
+  if (!shapeIds || shapeIds.length < 2) {
+    throw new Error('At least 2 shapes are required for column layout');
+  }
+
+  const targetShapes = shapes.filter(shape => shapeIds.includes(shape.id));
+  
+  if (targetShapes.length !== shapeIds.length) {
+    throw new Error('One or more shapes not found');
+  }
+
+  // Sort shapes by current y position
+  const sortedShapes = [...targetShapes].sort((a, b) => a.y - b.y);
+  
+  // Calculate total height needed
+  const totalHeight = sortedShapes.reduce((sum, shape) => sum + shape.height, 0) + (sortedShapes.length - 1) * spacing;
+  
+  // Calculate starting y position (center on canvas)
+  const canvasHeight = 5000;
+  const startY = Math.max(0, (canvasHeight - totalHeight) / 2);
+  
+  // Calculate center X position (average X of all shapes, centered)
+  const avgX = sortedShapes.reduce((sum, shape) => sum + shape.x, 0) / sortedShapes.length;
+  
+  // Position each shape
+  const positions: PositionUpdate[] = [];
+  let currentY = startY;
+  
+  sortedShapes.forEach(shape => {
+    positions.push({ 
+      id: shape.id, 
+      x: avgX - shape.width / 2, // Center-align horizontally
+      y: currentY
+    });
+    currentY += shape.height + spacing;
   });
   
   return positions;

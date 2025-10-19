@@ -16,13 +16,14 @@ const AIChat: React.FC<AIChatProps> = ({
   const { 
     chatMessages, 
     isChatProcessing, 
-    clearChatMessages 
+    clearChatMessages,
+    selectedShapes
   } = useCanvas();
   const { sendMessage } = useAI();
 
   const handleSendMessage = useCallback(async (content: string) => {
-    await sendMessage(content);
-  }, [sendMessage]);
+    await sendMessage(content, selectedShapes);
+  }, [sendMessage, selectedShapes]);
 
   const handleClearMessages = useCallback(() => {
     clearChatMessages();

@@ -920,6 +920,22 @@
   gap: 16px;
 }
 
+.back-to-dashboard-btn {
+  background: #374151;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+  margin-left: 1rem;
+}
+
+.back-to-dashboard-btn:hover {
+  background: #4b5563;
+}
+
 .logout-button {
   background: #dc2626;
   color: white;
