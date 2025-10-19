@@ -24,7 +24,7 @@ export function useAI() {
 
       // Create user message
       const userMessage: ChatMessage = {
-        id: `user_${Date.now()}`,
+        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         type: 'user',
         content: content.trim(),
         timestamp: new Date(),
@@ -38,10 +38,11 @@ export function useAI() {
       const lowerContent = content.toLowerCase();
       const isComplexCommand = lowerContent.includes('create login form') || 
                                lowerContent.includes('login form') ||
-                               lowerContent.includes('make') && lowerContent.includes('grid') ||
+                               (lowerContent.includes('make') && lowerContent.includes('grid')) ||
                                lowerContent.includes('3x3 grid') ||
                                lowerContent.includes('4x4 grid') ||
-                               lowerContent.includes('2x5 grid');
+                               lowerContent.includes('2x5 grid') ||
+                               lowerContent.includes('create') && lowerContent.includes('grid');
 
       if (isComplexCommand) {
         // Handle complex command with progress indicators
@@ -51,7 +52,7 @@ export function useAI() {
         if (complexResult.totalSteps > 1) {
           for (let i = 1; i <= complexResult.totalSteps; i++) {
             const progressMessage: ChatMessage = {
-              id: `progress_${Date.now()}_${i}`,
+              id: `progress_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
               type: 'ai',
               content: `⚡ Step ${i}/${complexResult.totalSteps}: ${getStepDescription(content, i)}`,
               timestamp: new Date(),
@@ -73,7 +74,7 @@ export function useAI() {
 
         // Add final result message
         const resultMessage: ChatMessage = {
-          id: `result_${Date.now()}`,
+          id: `result_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           type: 'ai',
           content: complexResult.message,
           timestamp: new Date(),

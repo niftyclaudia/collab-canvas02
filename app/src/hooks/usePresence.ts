@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { presenceService, type PresenceUpdate } from '../services/presenceService';
 import { useAuth } from '../contexts/AuthContext';
 
+// Utility function to deduplicate users by userId
+export const deduplicateUsers = <T extends { userId: string }>(users: T[]): T[] => {
+  return users.reduce((acc, user) => {
+    if (!acc.find(u => u.userId === user.userId)) {
+      acc.push(user);
+    }
+    return acc;
+  }, [] as T[]);
+};
+
 export interface OnlineUser {
   userId: string;
   username: string;
@@ -47,7 +57,10 @@ export function usePresence() {
           online: update.presence.online,
         }));
 
-      setOnlineUsers(users);
+      // Deduplicate users by userId to prevent duplicate keys
+      const uniqueUsers = deduplicateUsers(users);
+
+      setOnlineUsers(uniqueUsers);
     });
 
     return unsubscribe;

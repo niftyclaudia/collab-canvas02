@@ -71,6 +71,32 @@ describe('AIService Complex Commands', () => {
       expect(result.message).toContain('4x4 grid created');
     });
 
+    it('should execute 4x4 grid with random colors command', async () => {
+      // Mock successful shape creation
+      mockCanvasService.createRectangle.mockResolvedValue({ id: 'rect-1' });
+
+      const result = await aiService.executeComplexCommand('create 4x4 grid with random colors', testUserId);
+
+      expect(result.success).toBe(true);
+      expect(result.stepsCompleted).toBe(16);
+      expect(result.totalSteps).toBe(16);
+      expect(result.createdShapes).toHaveLength(16);
+      expect(result.message).toContain('4x4 grid created');
+    });
+
+    it('should execute 3x3 grid with random colors command', async () => {
+      // Mock successful shape creation
+      mockCanvasService.createRectangle.mockResolvedValue({ id: 'rect-1' });
+
+      const result = await aiService.executeComplexCommand('make 3x3 grid with random colors', testUserId);
+
+      expect(result.success).toBe(true);
+      expect(result.stepsCompleted).toBe(9);
+      expect(result.totalSteps).toBe(9);
+      expect(result.createdShapes).toHaveLength(9);
+      expect(result.message).toContain('3x3 grid created');
+    });
+
     it('should fallback to regular command for non-complex commands', async () => {
       // Mock the regular executeCommand method
       const mockExecuteCommand = vi.spyOn(aiService as any, 'executeCommand');
@@ -238,10 +264,10 @@ describe('AIService Complex Commands', () => {
       );
     });
 
-    it('should use different colors for each shape', async () => {
+    it('should use different colors for each shape when useRandomColors is true', async () => {
       mockCanvasService.createRectangle.mockResolvedValue({ id: 'rect-1' });
 
-      await aiService.createGrid(testUserId, 2, 2, 50);
+      await aiService.createGrid(testUserId, 2, 2, 50, undefined, true);
 
       // Verify createRectangle was called with different colors
       const calls = mockCanvasService.createRectangle.mock.calls;
@@ -249,6 +275,34 @@ describe('AIService Complex Commands', () => {
       
       // Should have different colors
       expect(new Set(colors).size).toBeGreaterThan(1);
+    });
+
+    it('should use same color for all shapes when useRandomColors is false', async () => {
+      mockCanvasService.createRectangle.mockResolvedValue({ id: 'rect-1' });
+
+      await aiService.createGrid(testUserId, 2, 2, 50, undefined, false);
+
+      // Verify createRectangle was called with same color
+      const calls = mockCanvasService.createRectangle.mock.calls;
+      const colors = calls.map(call => call[4]); // color is the 5th parameter
+      
+      // Should have same color for all shapes
+      expect(new Set(colors).size).toBe(1);
+      expect(colors[0]).toBe('#3b82f6'); // default color
+    });
+
+    it('should use same color by default (useRandomColors defaults to false)', async () => {
+      mockCanvasService.createRectangle.mockResolvedValue({ id: 'rect-1' });
+
+      await aiService.createGrid(testUserId, 2, 2, 50);
+
+      // Verify createRectangle was called with same color
+      const calls = mockCanvasService.createRectangle.mock.calls;
+      const colors = calls.map(call => call[4]); // color is the 5th parameter
+      
+      // Should have same color for all shapes
+      expect(new Set(colors).size).toBe(1);
+      expect(colors[0]).toBe('#3b82f6'); // default color
     });
   });
 

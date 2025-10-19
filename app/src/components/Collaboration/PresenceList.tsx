@@ -1,5 +1,6 @@
 import { UserPresenceBadge } from './UserPresenceBadge';
 import type { OnlineUser } from '../../hooks/usePresence';
+import { deduplicateUsers } from '../../hooks/usePresence';
 
 interface PresenceListProps {
   onlineUsers: OnlineUser[];
@@ -8,6 +9,9 @@ interface PresenceListProps {
 }
 
 export function PresenceList({ onlineUsers, currentUser, totalOnlineCount }: PresenceListProps) {
+  // Deduplicate users by userId to prevent duplicate keys
+  const uniqueOnlineUsers = deduplicateUsers(onlineUsers);
+
   return (
     <div
       className="presence-list"
@@ -65,7 +69,7 @@ export function PresenceList({ onlineUsers, currentUser, totalOnlineCount }: Pre
         )}
         
         {/* Other online users */}
-        {onlineUsers.map((user) => (
+        {uniqueOnlineUsers.map((user) => (
           <UserPresenceBadge 
             key={user.userId} 
             user={user} 
