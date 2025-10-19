@@ -986,7 +986,7 @@
 }
 
 .sidebar {
-  width: 280px;
+  width: 180px;
   background: #f8fafc;
   border-right: 1px solid #e2e8f0;
   display: flex;
@@ -1237,7 +1237,7 @@
   }
   
   .sidebar {
-    width: 240px;
+    width: 160px;
   }
   
   .color-buttons {
@@ -1745,7 +1745,7 @@
 
 /* Left Toolbar Styles */
 .left-toolbar {
-  width: 100px;
+  width: 180px;
   background: #ffffff;
   border-right: 1px solid #e2e8f0;
   display: flex;
@@ -1753,21 +1753,35 @@
   flex-shrink: 0;
   height: 100%;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .toolbar-container {
   display: flex;
   flex-direction: column;
   padding: 12px 8px;
-  gap: 8px;
+  gap: 12px;
   height: 100%;
 }
 
 .toolbar-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
+}
+
+.toolbar-section.destructive-section {
+  background: rgba(239, 68, 68, 0.05);
+  border-radius: 8px;
+  padding: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.1);
+}
+
+.toolbar-divider.destructive-divider {
+  background: linear-gradient(90deg, transparent, #ef4444, transparent);
+  height: 2px;
 }
 
 .toolbar-divider {
@@ -1775,6 +1789,33 @@
   background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
   margin: 8px 0;
   width: 100%;
+}
+
+.toolbar-toggle-button {
+  width: 100%;
+  height: 40px;
+  border: 2px solid #000000;
+  border-radius: 0px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  color: #000000;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  position: relative;
+  overflow: visible;
+  gap: 8px;
+}
+
+.toolbar-toggle-button:hover:not(.disabled) {
+  border-color: #000000;
+  background: #000000;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .toolbar-icon-button {
@@ -1795,6 +1836,13 @@
   overflow: visible;
 }
 
+.toolbar-icon-button {
+  width: 100%;
+  justify-content: flex-start;
+  padding-left: 12px;
+  gap: 8px;
+}
+
 .toolbar-icon-button svg {
   color: inherit;
   stroke: currentColor;
@@ -1806,18 +1854,18 @@
 }
 
 .toolbar-icon-button:hover:not(.disabled) {
-  border-color: #000000;
-  background: #000000;
+  border-color: #3b82f6;
+  background: #3b82f6;
   color: white;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 .toolbar-icon-button.active {
-  border-color: #000000;
-  background: #000000;
+  border-color: #3b82f6;
+  background: #3b82f6;
   color: white;
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
 .toolbar-icon-button.disabled {
@@ -1835,16 +1883,31 @@
   background: #f9fafb;
 }
 
+.toolbar-icon-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: all 0.3s ease;
+}
+
+.toolbar-icon-label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 /* Color Palette */
 .color-palette {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
   width: 100%;
 }
 
 .color-button {
-  width: 100%;
+  width: 40px;
   height: 40px;
   border: 2px solid #e5e7eb;
   border-radius: 0px;
@@ -1852,7 +1915,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   position: relative;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
@@ -1934,7 +1997,11 @@
 /* Responsive Design */
 @media (max-width: 1024px) {
   .left-toolbar {
-    width: 180px;
+    width: 64px;
+  }
+  
+  .left-toolbar.expanded {
+    width: 160px;
   }
   
   .toolbar-container {
@@ -1966,6 +2033,10 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   }
   
+  .left-toolbar.expanded {
+    width: 100%;
+  }
+  
   .toolbar-container {
     flex-direction: row;
     flex-wrap: wrap;
@@ -1979,8 +2050,9 @@
   }
   
   .color-palette {
-    flex-direction: row;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
   }
   
   .toolbar-divider {
@@ -1990,19 +2062,24 @@
     background: linear-gradient(180deg, transparent, #e2e8f0, transparent);
   }
   
-  .color-palette {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  
   .toolbar-icon-button {
     width: 36px;
     height: 36px;
   }
   
+  .toolbar-icon-button {
+    width: 36px;
+    justify-content: center;
+    padding-left: 0;
+  }
+  
+  .toolbar-icon-label {
+    display: none;
+  }
+  
   .color-button {
-    height: 36px;
+    width: 32px;
+    height: 32px;
   }
 }
 

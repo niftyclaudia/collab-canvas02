@@ -209,7 +209,7 @@ export function Canvas() {
   } | null>(null);
   
   const [stageSize, setStageSize] = useState({
-    width: window.innerWidth,
+    width: window.innerWidth - 64, // Account for collapsed toolbar
     height: window.innerHeight - 60, // Account for navbar
   });
   const [isGesturing, setIsGesturing] = useState(false);
@@ -217,14 +217,43 @@ export function Canvas() {
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
+      // Get the actual toolbar width from the DOM
+      const toolbar = document.querySelector('.left-toolbar');
+      const toolbarWidth = toolbar ? toolbar.getBoundingClientRect().width : 64;
+      
       setStageSize({
-        width: window.innerWidth,
+        width: window.innerWidth - toolbarWidth,
         height: window.innerHeight - 60,
       });
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Handle toolbar expand/collapse changes
+  useEffect(() => {
+    const handleToolbarChange = () => {
+      const toolbar = document.querySelector('.left-toolbar');
+      const toolbarWidth = toolbar ? toolbar.getBoundingClientRect().width : 64;
+      
+      setStageSize({
+        width: window.innerWidth - toolbarWidth,
+        height: window.innerHeight - 60,
+      });
+    };
+
+    // Use MutationObserver to watch for class changes on the toolbar
+    const toolbar = document.querySelector('.left-toolbar');
+    if (toolbar) {
+      const observer = new MutationObserver(handleToolbarChange);
+      observer.observe(toolbar, { 
+        attributes: true, 
+        attributeFilter: ['class'] 
+      });
+      
+      return () => observer.disconnect();
+    }
   }, []);
 
 
