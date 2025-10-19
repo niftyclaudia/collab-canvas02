@@ -2172,6 +2172,13 @@ useEffect(() => {
   // Enhanced keyboard event handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore keyboard events if user is typing in input fields
+      if (e.target instanceof HTMLInputElement || 
+          e.target instanceof HTMLTextAreaElement || 
+          e.target instanceof HTMLSelectElement) {
+        return;
+      }
+
       // Handle Escape key - deselect shape or cancel drawing
       if (e.key === 'Escape') {
         if (drawingState.isDrawing) {

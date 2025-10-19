@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { CanvasService } from './canvasService';
 import { getSystemPrompt } from '../utils/aiPrompts';
 import { logger, LogCategory } from '../utils/logger';
+import type { ChatMessage } from '../types/chat';
 
 interface CommandResult {
   success: boolean;
@@ -121,6 +122,57 @@ export class AIService {
         toolCalls: []
       };
     }
+  }
+
+  /**
+   * Send a message through the AI chat interface
+   * @param content The message content from the user
+   * @param userId The user ID
+   * @returns Promise<ChatMessage> The AI response message
+   */
+  async sendMessage(content: string, userId: string): Promise<ChatMessage> {
+    try {
+      // Create user message
+      // const userMessage: ChatMessage = {
+      //   id: this.generateMessageId(),
+      //   type: 'user',
+      //   content,
+      //   timestamp: new Date(),
+      //   status: 'processing'
+      // };
+
+      // Execute the AI command
+      const result = await this.executeCommand(content, userId);
+
+      // Create AI response message
+      const aiMessage: ChatMessage = {
+        id: this.generateMessageId(),
+        type: 'ai',
+        content: result.message,
+        timestamp: new Date(),
+        status: result.success ? 'success' : 'error'
+      };
+
+      return aiMessage;
+    } catch (error: any) {
+      console.error('Chat message error:', error);
+      
+      // Return error message
+      return {
+        id: this.generateMessageId(),
+        type: 'ai',
+        content: "⚠️ AI service error. Please try again.",
+        timestamp: new Date(),
+        status: 'error'
+      };
+    }
+  }
+
+  /**
+   * Generate a unique message ID
+   */
+  private generateMessageId(): string {
+    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
   
   private async executeToolCalls(toolCalls: any[], userId: string) {

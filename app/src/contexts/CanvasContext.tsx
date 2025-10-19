@@ -5,6 +5,7 @@ import type { Shape, CreateShapeData, Group } from '../services/canvasService';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
+import type { ChatMessage } from '../types/chat';
 
 // Drawing state for shape preview during drag
 export interface DrawingState {
@@ -102,6 +103,18 @@ export interface CanvasState {
   updateDrawing: (x: number, y: number) => void;
   finishDrawing: () => Promise<void>;
   cancelDrawing: () => void;
+  
+  // Chat state
+  chatMessages: ChatMessage[];
+  isChatOpen: boolean;
+  isChatProcessing: boolean;
+  chatDrawerHeight: number;
+  setChatMessages: (messages: ChatMessage[]) => void;
+  addChatMessage: (message: ChatMessage) => void;
+  clearChatMessages: () => void;
+  setChatOpen: (isOpen: boolean) => void;
+  setChatProcessing: (isProcessing: boolean) => void;
+  setChatDrawerHeight: (height: number) => void;
 }
 
 export const CanvasContext = createContext<CanvasState | undefined>(undefined);
@@ -145,6 +158,12 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     textDecoration: 'none',
     fontSize: 16,
   });
+  
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatProcessing, setIsChatProcessing] = useState(false);
+  const [chatDrawerHeight, setChatDrawerHeight] = useState(300);
   
   // Wrapper function to track manual deselection
   const setSelectedShapes = useCallback((shapeIds: string[]) => {
@@ -490,6 +509,15 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
 
   const cancelDrawing = useCallback(() => {
     setDrawingState(initialDrawingState);
+  }, []);
+
+  // Chat helper functions
+  const addChatMessage = useCallback((message: ChatMessage) => {
+    setChatMessages(prev => [...prev, message]);
+  }, []);
+
+  const clearChatMessages = useCallback(() => {
+    setChatMessages([]);
   }, []);
 
   // Text editing functions
@@ -910,6 +938,16 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     updateDrawing,
     finishDrawing,
     cancelDrawing,
+    chatMessages,
+    isChatOpen,
+    isChatProcessing,
+    chatDrawerHeight,
+    setChatMessages,
+    addChatMessage,
+    clearChatMessages,
+    setChatOpen: setIsChatOpen,
+    setChatProcessing: setIsChatProcessing,
+    setChatDrawerHeight,
   };
 
   return (

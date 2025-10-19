@@ -1,8 +1,6 @@
-import React from 'react';
 import { useCanvas } from '../../hooks/useCanvas';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
-import { canvasService } from '../../services/canvasService';
 
 interface GroupingPanelProps {
   selectedShapes: string[];
@@ -13,7 +11,7 @@ interface GroupingPanelProps {
 export function GroupingPanel({ selectedShapes, onGroup, onUngroup }: GroupingPanelProps) {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { groupShapes, ungroupShapes, shapes, getGroupForShape } = useCanvas();
+  const { groupShapes, ungroupShapes, shapes } = useCanvas();
 
   // Check if we can group (2+ shapes selected)
   const canGroup = selectedShapes.length >= 2;

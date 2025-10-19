@@ -159,10 +159,10 @@ export function FloatingToolsPanel({ selectedShapes, shapes }: FloatingToolsPane
   }
 
   // Grouping logic - improved to handle edge cases
-  const selectedShapesInGroup = selectedShapes.filter(shapeId => {
-    const shape = shapes.find(s => s.id === shapeId);
-    return shape && shape.groupId;
-  });
+  // const selectedShapesInGroup = selectedShapes.filter(shapeId => {
+  //   const shape = shapes.find(s => s.id === shapeId);
+  //   return shape && shape.groupId;
+  // });
   
   // Check if all selected shapes are in the same group
   let allInSameGroup = false;
