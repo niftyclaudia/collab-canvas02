@@ -115,7 +115,34 @@ A collaborative design tool where 2-4 "memory makers" craft gifts and keepsakes 
   - [ ] Layout command execution
   - [ ] Error handling for invalid commands
 
-### Nice-to-Have (Optional)
+### Canvas Management (Phase 3 - Essential)
+- [ ] **Canvas Gallery & List View**
+  - [ ] Landing page/modal showing all canvases
+  - [ ] Display canvas metadata (name, last modified, collaborators)
+  - [ ] Click to open canvas functionality
+  - [ ] Loading states and empty state UI
+  - [ ] Default view after login
+- [ ] **Create New Canvas & Naming**
+  - [ ] "Create New Canvas" button in gallery
+  - [ ] Default canvas naming ("Untitled Canvas 1")
+  - [ ] Canvas rename functionality
+  - [ ] Canvas name validation
+  - [ ] Real-time name sync
+- [ ] **Canvas Sharing & Collaboration**
+  - [ ] Shareable link generation (unique URLs)
+  - [ ] Copy link to clipboard
+  - [ ] Collaborator management
+  - [ ] Permissions (owner vs collaborator)
+  - [ ] Access control for shared links
+  - [ ] Firestore security rules
+- [ ] **Canvas Deletion**
+  - [ ] Delete button with confirmation modal
+  - [ ] Cascade delete (shapes, groups, presence, chat)
+  - [ ] Owner-only deletion permissions
+  - [ ] Error handling for failed deletions
+  - [ ] UI updates after deletion
+
+### Nice-to-Have (Optional - Phase 4)
 - [ ] **Alignment Tools**
   - [ ] Align left, center, right, top, middle, bottom
   - [ ] Distribute horizontally/vertically
@@ -166,17 +193,23 @@ A collaborative design tool where 2-4 "memory makers" craft gifts and keepsakes 
 5. **PR #5: Demo Video** - 3-5 minutes showing all features
 6. **PR #6: Testing & Deploy** - Production readiness
 
-### Phase 3: Nice-to-Have (If Time Permits)
-7. **PR #7: Alignment Tools** - Align left/center/right, distribute
-8. **PR #8: Comments System** - Collaborative commenting on shapes
-9. **PR #9: Advanced Shortcuts** - Group operations, z-index shortcuts
-10. **PR #10: Performance** - 500+ shapes, optimization
+### Phase 3: Canvas Management (Essential)
+7. **PR #10: Canvas Gallery & List View** - View all canvases, select which to work on
+8. **PR #11: Create New Canvas & Naming** - Create/rename canvases
+9. **PR #12: Canvas Sharing & Collaboration Setup** - Shareable links, collaborator management
+10. **PR #13: Canvas Deletion** - Delete canvases with cleanup
+
+### Phase 4: Nice-to-Have (If Time Permits)
+11. **PR #7: Alignment Tools** - Align left/center/right, distribute
+12. **PR #8: Comments System** - Collaborative commenting on shapes
+13. **PR #9: Advanced Shortcuts** - Group operations, z-index shortcuts
+14. **PR #14: Performance** - 500+ shapes, optimization
 
 ---
 
 ## 🎯 School Project Requirements
 
-**Core (Must Have):**
+**Phase 2: Core Features (Must Have):**
 - **Grouping** ← REQUIRED
 - **Z-Index Management** ← REQUIRED  
 - **AI Chat UI** (AI functionality) ← REQUIRED
@@ -184,7 +217,13 @@ A collaborative design tool where 2-4 "memory makers" craft gifts and keepsakes 
 - Real-time collaboration (already working)
 - Multi-select and shape manipulation (already working)
 
-**Stretch Goals (If Time Permits):**
+**Phase 3: Canvas Management (Must Have for Production):**
+- **Canvas Gallery & List View** ← REQUIRED for multi-canvas support
+- **Create New Canvas & Naming** ← REQUIRED for organization
+- **Canvas Sharing & Collaboration** ← REQUIRED for team collaboration
+- **Canvas Deletion** ← REQUIRED for canvas lifecycle
+
+**Phase 4: Stretch Goals (If Time Permits):**
 - Alignment Tools
 - Comments System
 - Advanced Keyboard Shortcuts
@@ -212,7 +251,18 @@ A collaborative design tool where 2-4 "memory makers" craft gifts and keepsakes 
 ## 📊 Database Schema
 
 ```typescript
-// New: canvases/main/groups
+// New: canvases collection (Phase 3)
+{
+  id: "canvas_xyz",
+  name: "My Design Project",
+  ownerId: "user_abc",
+  collaborators: ["user_abc", "user_def"],
+  createdAt: timestamp,
+  lastModified: timestamp,
+  shareLink: "unique_shareable_id"  // for shareable links
+}
+
+// New: canvases/{canvasId}/groups
 {
   id: "group_abc",
   name: "Login Form",
@@ -221,12 +271,17 @@ A collaborative design tool where 2-4 "memory makers" craft gifts and keepsakes 
   createdAt: timestamp
 }
 
-// Updated: shapes collection
+// Updated: canvases/{canvasId}/shapes
 {
   // ... existing fields
-  groupId: "group_abc" | null,  // NEW
-  zIndex: 5,                    // NEW
+  groupId: "group_abc" | null,  // NEW (Phase 2)
+  zIndex: 5,                    // NEW (Phase 2)
 }
+
+// Security Rules (Phase 3)
+// - Owners can read/write/delete their canvases
+// - Collaborators can read/write but not delete
+// - Shared link access grants collaborator permissions
 ```
 
 
@@ -353,35 +408,52 @@ components/Layout/LeftToolbar.tsx
 
 ## ✅ Success Criteria
 
-### Must Pass (Critical)
+### Phase 2: Must Pass (Critical)
 - [ ] **Grouping** - Select 2+ shapes, group/ungroup functionality
 - [ ] **Z-Index Management** - Bring to front/back, forward/backward
 - [ ] **AI Chat UI** - Bottom drawer interface for AI commands
 - [ ] **AI Layout Commands** - "Arrange these shapes in a row" works
+
+### Phase 3: Canvas Management (Critical)
+- [ ] **Canvas Gallery** - View all canvases, select which to work on
+- [ ] **Create/Rename Canvas** - Create new canvases with naming
+- [ ] **Canvas Sharing** - Generate shareable links, collaborator access
+- [ ] **Canvas Deletion** - Delete canvases with proper cleanup
+
+### Deployment & Testing
 - [ ] **Demo Video** - 3-5 minutes showing all features
 - [ ] **Deployed to Production** - Working URL
-- [ ] **Basic Testing** - 2+ users, real-time sync works
+- [ ] **Basic Testing** - 2+ users, real-time sync works across canvases
 
 ---
 
 ## 🚀 Next Steps
 
+### Phase 2 (Days 1-4)
 1. **Review this PRD** - Confirm scope and priorities
 2. **Start with Grouping** - Day 1
 3. **Add Z-Index Management** - Day 2  
 4. **Build AI Chat UI** - AI functionality - Day 3
 5. **Implement Layout Commands** - "Arrange in a row" - Day 4
-6. **Record Demo Video** - Day 5
-7. **Test & Deploy** - Production readiness - Days 6-7
 
-### 🚫 NICE TO HAVE **
+### Phase 3 (Days 5-8)
+6. **Canvas Gallery** - List view and navigation - Day 5
+7. **Create/Rename Canvas** - Canvas management - Day 6
+8. **Canvas Sharing** - Shareable links and collaboration - Day 7
+9. **Canvas Deletion** - Cleanup and safeguards - Day 8
+
+### Deployment (Days 9-10)
+10. **Record Demo Video** - 3-5 minutes showing all features
+11. **Test & Deploy** - Production readiness
+
+### 🚫 NICE TO HAVE (Phase 4 - Optional)
 - ❌ Alignment Tools - Can skip
 - ❌ Comments System - Can skip
 - ❌ Advanced Shortcuts - Polish feature
 - ❌ Performance Optimization - Scale bonus
 - ❌ Complex AI Commands - Advanced features
 
-**Ready to begin Phase 2 implementation**
+**Ready to begin Phase 2 & 3 implementation**
 
 ---
 

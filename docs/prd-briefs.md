@@ -261,6 +261,155 @@ Add alignment toolbar with 6 alignment options (left, center, right, top, middle
 
 ---
 
+## 🔵 Phase 3: Canvas Management (PRs #10-13)
+
+### PR #10: Canvas Gallery & List View
+
+**Feature**: Canvas gallery interface for viewing past canvases
+**Priority**: P0 - REQUIRED
+**Estimated Time**: 6-7 hours
+
+#### Brief
+Create a canvas gallery interface where users can view all their past canvases and select which one to work on. This PR implements a landing page/modal showing canvas list, displays canvas metadata (name, last modified date, collaborators), allows clicking to open a canvas, shows loading states during canvas data fetching, and handles empty state (no canvases yet). The gallery should be the default view when users log in, allowing them to choose between creating new or opening existing canvases.
+
+#### Key Requirements
+- Canvas gallery landing page/modal
+- Canvas list with thumbnails (if possible) or placeholders
+- Display canvas metadata: name, last modified, collaborators
+- Click to open canvas functionality
+- Loading states during canvas fetch
+- Empty state UI (no canvases yet)
+- Firestore query for user's canvases
+- Navigation between gallery and canvas view
+
+#### Acceptance Gates
+- [ ] User logs in → sees gallery with all their canvases
+- [ ] Canvas list displays name, last modified, collaborators
+- [ ] Clicking canvas opens it in editor
+- [ ] Loading states show during fetch
+- [ ] Empty state appears when no canvases exist
+- [ ] Gallery is default view after login
+
+**Dependencies**: PR #1 (Grouping), PR #2 (Z-Index)
+
+**Complexity**: Medium
+
+**Phase**: 3
+
+---
+
+### PR #11: Create New Canvas & Naming
+
+**Feature**: Create new blank canvases and name/rename existing canvases
+**Priority**: P0 - REQUIRED
+**Estimated Time**: 3-4 hours
+
+#### Brief
+Add functionality to create new blank canvases and name/rename existing canvases. This PR implements "Create New Canvas" button in the gallery, canvas creation with default naming, canvas naming modal/interface, canvas rename functionality, canvas name validation, and updates canvas metadata in Firestore. Users should be able to organize their canvases with meaningful names for easy identification.
+
+#### Key Requirements
+- "Create New Canvas" button in gallery
+- Canvas creation with default naming ("Untitled Canvas 1", etc.)
+- Canvas naming modal/dialog
+- Canvas rename functionality from gallery or canvas view
+- Canvas name validation (length, characters)
+- Update canvas metadata in Firestore
+- Real-time canvas name sync
+- Navigation to newly created canvas
+
+#### Acceptance Gates
+- [ ] User clicks "Create New Canvas" → new blank canvas opens
+- [ ] New canvas has default name
+- [ ] User can rename canvas from gallery or canvas view
+- [ ] Canvas name updates in Firestore
+- [ ] Canvas name syncs to other users viewing same canvas
+- [ ] Name validation prevents invalid names
+
+**Dependencies**: PR #10 (Canvas Gallery)
+
+**Complexity**: Simple
+
+**Phase**: 3
+
+---
+
+### PR #12: Canvas Sharing & Collaboration Setup
+
+**Feature**: Canvas sharing with shareable links and collaborator management
+**Priority**: P0 - REQUIRED
+**Estimated Time**: 7-8 hours
+
+#### Brief
+Implement canvas sharing functionality allowing users to generate shareable links and collaborate with others. This PR creates shareable link generation (unique URLs per canvas), implements link copying to clipboard, adds collaborator management (tracking who has access), handles permissions for canvas access, updates collaborators array in Firestore, and creates UI for sharing settings. When a user opens a shared link, they should automatically gain access to view and edit the canvas in real-time.
+
+#### Key Requirements
+- Shareable link generation (unique URLs per canvas)
+- Copy link to clipboard functionality
+- Collaborator management (list of users with access)
+- Permissions for canvas access (owner vs collaborator)
+- Update collaborators array in Firestore
+- UI for sharing settings/modal
+- Access control when opening shared links
+- Real-time presence for all collaborators
+- Firestore security rules for canvas access
+
+#### Acceptance Gates
+- [ ] User clicks "Share" → generates unique shareable link
+- [ ] Link copies to clipboard
+- [ ] User opens shared link → gains access to canvas
+- [ ] Collaborators list shows all users with access
+- [ ] Owner can manage collaborators (future: remove access)
+- [ ] Real-time collaboration works with shared links
+- [ ] Security rules prevent unauthorized access
+
+**Dependencies**: PR #3 (Presence/Collaboration), PR #10 (Canvas Gallery)
+
+**Complexity**: Medium
+
+**Phase**: 3
+
+---
+
+### PR #13: Canvas Deletion
+
+**Feature**: Delete canvases with proper safeguards and cleanup
+**Priority**: P0 - REQUIRED
+**Estimated Time**: 4-5 hours
+
+#### Brief
+Add the ability to delete canvases users no longer need, with proper safeguards and cleanup. This PR implements delete button in canvas gallery/settings, adds confirmation modal to prevent accidental deletion, handles deletion of canvas document from Firestore, cascades deletion to related data (shapes, chat messages, presence data), updates UI after successful deletion, and implements proper error handling. Only canvas owners should be able to delete canvases, and all associated data should be cleaned up to avoid orphaned records.
+
+#### Key Requirements
+- Delete button in canvas gallery or canvas settings
+- Confirmation modal ("Are you sure?" with canvas name)
+- Delete canvas document from Firestore
+- Cascade delete related data:
+  - All shapes in canvas
+  - Chat messages (if applicable)
+  - Presence data
+  - Groups data
+- Update UI after deletion (remove from gallery)
+- Error handling for deletion failures
+- Owner-only deletion permissions
+- Prevent deletion if canvas is currently being edited by others (optional safety)
+
+#### Acceptance Gates
+- [ ] User clicks "Delete" → confirmation modal appears
+- [ ] User confirms deletion → canvas and all related data deleted
+- [ ] Canvas removed from gallery after deletion
+- [ ] All shapes, groups, presence data deleted
+- [ ] Only owner can delete canvas
+- [ ] Error handling for failed deletions
+- [ ] UI updates reflect deletion immediately
+
+**Dependencies**: PR #10 (Canvas Gallery)
+
+**Complexity**: Simple
+
+**Phase**: 3
+
+---
+
 ## Development Phases
 
 ### Phase 2: Essential Features (PRs #1-4)
@@ -268,36 +417,54 @@ Add alignment toolbar with 6 alignment options (left, center, right, top, middle
 - **Time**: 17-22 hours
 - **Focus**: Core collaborative design features
 
-### Phase 3: Nice-to-Have (PRs #5-9)
+### Phase 3: Canvas Management (PRs #10-13)
+- Canvas Gallery, Create/Naming, Sharing, Deletion
+- **Time**: 20-24 hours
+- **Focus**: Multi-canvas support and collaboration infrastructure
+
+### Phase 4: Nice-to-Have (PRs #5-9)
 - Complex AI, Comments, Advanced Shortcuts, Performance, Alignment Tools
 - **Time**: 25-34 hours
 - **Focus**: Polish and advanced features
 
-**Total Estimated Time**: 42-56 hours (fits within 72-hour window)
+**Total Estimated Time**: 62-80 hours
 
 ---
 
 ## Success Criteria
 
-### Must Pass (Critical)
+### Phase 2: Must Pass (Critical)
 - [ ] **Grouping** - Select 2+ shapes, group/ungroup functionality
 - [ ] **Z-Index Management** - Bring to front/back, forward/backward
 - [ ] **AI Chat UI** - Bottom drawer interface for AI commands
 - [ ] **AI Layout Commands** - "Arrange these shapes in a row" works
+
+### Phase 3: Canvas Management (Critical)
+- [ ] **Canvas Gallery** - View all canvases, select which to work on
+- [ ] **Create/Rename Canvas** - Create new canvases with naming
+- [ ] **Canvas Sharing** - Generate shareable links, collaborator access
+- [ ] **Canvas Deletion** - Delete canvases with proper cleanup
+
+### Deployment & Testing
 - [ ] **Deployed to Production** - Working URL
-- [ ] **Basic Testing** - 2+ users, real-time sync works
+- [ ] **Basic Testing** - 2+ users, real-time sync works across multiple canvases
 
 ---
 
 ## Notes for Agents
 
 1. **Use the PRD Template**: Each PR should be developed using the template in `agent/prd-template.md`
-2. **Focus on Required Features**: PRs #1-4 are essential for the complete feature set
+2. **Focus on Required Features**: 
+   - PRs #1-4 (Phase 2) are essential for core collaborative design
+   - PRs #10-13 (Phase 3) are essential for multi-canvas support and production readiness
 3. **Real-time Sync**: All features must sync to other users in <100ms
 4. **AI Integration**: AI features use the same CanvasService methods as manual features
 5. **User Experience**: Prioritize features that enhance collaborative design workflows
 6. **Testing**: Include comprehensive acceptance gates for each PR
 7. **Performance**: Maintain 60 FPS with 500+ shapes and 5+ users
+8. **Canvas Management**: Phase 3 transforms the app from single-canvas prototype to production-ready multi-canvas platform
+9. **Security**: Firestore security rules are critical for Phase 3 (canvas access control)
+10. **Data Cleanup**: Canvas deletion must cascade to all related data (shapes, groups, presence, chat)
 
 Each PR should be developed as a complete, testable feature that can be demonstrated independently while contributing to the overall system.
 

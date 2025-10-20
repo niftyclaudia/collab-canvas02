@@ -1,80 +1,88 @@
-import { useCanvas } from '../../hooks/useCanvas';
+import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
+import { canvasService, type Shape } from '../../services/canvasService';
 
 interface GroupingPanelProps {
-  selectedShapes: string[];
-  onGroup: () => void;
+  selectedShapes: Shape[];
+  onGroup: (groupId: string) => void;
   onUngroup: () => void;
 }
 
 export function GroupingPanel({ selectedShapes, onGroup, onUngroup }: GroupingPanelProps) {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { groupShapes, ungroupShapes, shapes } = useCanvas();
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Check if we can group (2+ shapes selected)
+  // Check if we have at least 2 shapes selected
   const canGroup = selectedShapes.length >= 2;
 
-  // Check if we can ungroup (all selected shapes are in the same group)
-  const canUngroup = (() => {
-    if (selectedShapes.length === 0) return false;
-    
-    // Check if all selected shapes are in the same group
-    const firstShape = shapes.find(s => s.id === selectedShapes[0]);
-    if (!firstShape || !firstShape.groupId) {
-      console.log('GroupingPanel: First shape not found or not in group:', firstShape);
-      return false;
-    }
-    
-    const groupId = firstShape.groupId;
-    const allInSameGroup = selectedShapes.every(shapeId => {
-      const shape = shapes.find(s => s.id === shapeId);
-      return shape && shape.groupId === groupId;
-    });
-    
-    console.log('GroupingPanel: canUngroup check:', {
-      selectedShapes,
-      firstShape: firstShape.id,
-      groupId,
-      allInSameGroup
-    });
-    
-    return allInSameGroup;
-  })();
+  // Check if all selected shapes belong to the same group
+  const groupId = selectedShapes.length > 0 ? selectedShapes[0].groupId : null;
+  const allInSameGroup = groupId && selectedShapes.every(shape => shape.groupId === groupId);
+  const canUngroup = allInSameGroup;
 
   const handleGroup = async () => {
-    if (!user || selectedShapes.length < 2) return;
+    if (!user || !canGroup || isLoading) return;
     
+    // Check if any shape is locked by another user
+    const lockedShapes = selectedShapes.filter(
+      shape => shape.lockedBy && shape.lockedBy !== user.uid
+    );
+    
+    if (lockedShapes.length > 0) {
+      showToast('Cannot group: Some shapes are locked by other users', 'error');
+      return;
+    }
+
+    // Check if any shape is already in a group
+    const groupedShapes = selectedShapes.filter(shape => shape.groupId);
+    if (groupedShapes.length > 0) {
+      showToast('Cannot group: Some shapes are already in a group', 'error');
+      return;
+    }
+    
+    setIsLoading(true);
     try {
-      await groupShapes(selectedShapes);
-      // The context's groupShapes function should maintain selection
-      onGroup();
+      const shapeIds = selectedShapes.map(shape => shape.id);
+      const newGroupId = await canvasService.groupShapes(shapeIds, user.uid);
+      onGroup(newGroupId);
+      showToast(`Grouped ${selectedShapes.length} shapes`, 'success');
     } catch (error) {
       console.error('Failed to group shapes:', error);
       showToast('Failed to group shapes', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleUngroup = async () => {
-    if (!user || selectedShapes.length === 0) return;
+    if (!user || !canUngroup || !groupId || isLoading) return;
     
+    // Check if any shape is locked by another user
+    const lockedShapes = selectedShapes.filter(
+      shape => shape.lockedBy && shape.lockedBy !== user.uid
+    );
+    
+    if (lockedShapes.length > 0) {
+      showToast('Cannot ungroup: Some shapes are locked by other users', 'error');
+      return;
+    }
+    
+    setIsLoading(true);
     try {
-      // Find the group ID from the first selected shape
-      const firstShape = shapes.find(s => s.id === selectedShapes[0]);
-      if (!firstShape || !firstShape.groupId) {
-        showToast('Selected shapes are not in a group', 'error');
-        return;
-      }
-      
-      await ungroupShapes(firstShape.groupId);
+      await canvasService.ungroupShapes(groupId);
       onUngroup();
+      showToast('Shapes ungrouped', 'success');
     } catch (error) {
       console.error('Failed to ungroup shapes:', error);
       showToast('Failed to ungroup shapes', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  // Don't show panel if no shapes are selected
   if (selectedShapes.length === 0) {
     return null;
   }
@@ -82,15 +90,16 @@ export function GroupingPanel({ selectedShapes, onGroup, onUngroup }: GroupingPa
   return (
     <div className="grouping-panel">
       <div className="grouping-controls">
-        {canGroup && (
+        {canGroup && !allInSameGroup && (
           <button
             type="button"
             className="grouping-button group-button"
             onClick={handleGroup}
+            disabled={isLoading}
             title="Group selected shapes (Cmd/Ctrl+G)"
           >
-            <span style={{fontSize: '16px'}}>🔗</span>
-            <span>Group</span>
+            <span style={{fontSize: '16px'}}>📦</span>
+            <span>{isLoading ? 'Grouping...' : 'Group'}</span>
           </button>
         )}
         
@@ -99,10 +108,11 @@ export function GroupingPanel({ selectedShapes, onGroup, onUngroup }: GroupingPa
             type="button"
             className="grouping-button ungroup-button"
             onClick={handleUngroup}
+            disabled={isLoading}
             title="Ungroup selected shapes (Cmd/Ctrl+Shift+G)"
           >
-            <span style={{fontSize: '16px'}}>🔓</span>
-            <span>Ungroup</span>
+            <span style={{fontSize: '16px'}}>📂</span>
+            <span>{isLoading ? 'Ungrouping...' : 'Ungroup'}</span>
           </button>
         )}
       </div>
