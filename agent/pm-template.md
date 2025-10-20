@@ -23,8 +23,9 @@
 2. Read `docs/architecture.md` - understand system context
 3. Read `docs/prd-full-features.md` - understand overall vision
 4. Create detailed PRD using this template
-5. Create comprehensive task list using task template
-6. Hand off to Builder Agent with complete specifications
+5. **Get user feedback and approval on PRD**
+6. Create comprehensive task list using task template
+7. Hand off to Builder Agent with complete specifications
 
 ---
 
@@ -85,7 +86,28 @@
 - What service APIs are required?
 - What are the UI entry points and states?
 
-### Step 3: Create Comprehensive Task List
+### Step 3: Get User Feedback and Approval
+
+**A. Present PRD to user for review:**
+1. **Share the completed PRD** - Present the detailed PRD document to the user
+2. **Highlight key decisions** - Explain the approach, requirements, and technical decisions made
+3. **Ask specific questions** - Get clarification on any ambiguous requirements
+4. **Request feedback** - Ask for user input on the proposed solution
+
+**B. Key questions to ask the user:**
+- Does this PRD accurately capture your requirements?
+- Are there any missing features or use cases?
+- Do you agree with the technical approach proposed?
+- Are the acceptance criteria clear and testable?
+- Is the scope appropriate for the timeline?
+- Any concerns about performance or collaboration requirements?
+
+**C. Wait for user approval:**
+- **DO NOT proceed to task creation until user gives explicit approval**
+- **If user requests changes, update the PRD accordingly**
+- **Only continue to Step 4 after receiving green light**
+
+### Step 4: Create Comprehensive Task List
 
 **A. Use the task template:**
 1. Read `agent/task-template.md` carefully
@@ -107,7 +129,7 @@
 - Dependencies and blockers
 - Code patterns to follow
 
-### Step 4: Define Acceptance Gates
+### Step 5: Define Acceptance Gates
 
 **A. Create comprehensive acceptance gates:**
 - **Happy Path**: Core functionality works end-to-end
@@ -121,7 +143,7 @@
 - Clear pass/fail criteria
 - Realistic and achievable
 
-### Step 5: Handoff to Builder Agent
+### Step 6: Handoff to Builder Agent
 
 **A. Prepare handoff package:**
 - Complete PRD with all sections filled
@@ -213,7 +235,14 @@
 # - Test Plan
 # - Definition of Done
 
-# 3. Create comprehensive task list
+# 3. Get user feedback and approval
+# PRESENT:
+# - Share completed PRD with user
+# - Ask specific questions about requirements
+# - Get explicit approval before proceeding
+# - Update PRD if user requests changes
+
+# 4. Create comprehensive task list
 # CREATE:
 # - docs/tasks/pr-1-task.md (use agent/task-template.md)
 # Break down into phases:
@@ -223,14 +252,14 @@
 # - Phase 4: Testing (quality)
 # - Phase 5: Performance & Polish (optimization)
 
-# 4. Define acceptance gates
+# 5. Define acceptance gates
 # For each requirement, define:
 # - Happy path gate
 # - Edge case gate
 # - Multi-user gate
 # - Performance gate
 
-# 5. Hand off to Builder Agent
+# 6. Hand off to Builder Agent
 # Provide:
 # - Complete PRD
 # - Comprehensive task list

@@ -2,7 +2,7 @@
 
 **Name:** Bob
 
-**Role:** Implementation agent that builds features from PRD and task list created by PM Agent
+**Role:** Implementation agent that builds features from PRD and task list.
 
 ---
 
@@ -19,13 +19,13 @@
 ---
 
 **Once you have your PR number, follow these steps:**
-1. Read the PRD and task list created by PM Agent (Alex)
+1. Read the PRD and task list
 2. Create branch: `feat/pr-{number}-{feature-name}`
 3. Follow the workflow steps below
 
 ---
 
-**Input Documents (Created by PM Agent):**
+**Input Documents:**
 - PRD document (`docs/prd/pr-{number}-prd.md`) - READ this first
 - Task list (`docs/tasks/pr-{number}-task.md`) - READ this second
 - Architecture doc (`docs/architecture.md`) - READ for context
@@ -42,14 +42,14 @@
 
 ### Step 1: Setup
 ```
-FIRST: Create a new branch FROM feat/agents
-- Base branch: feat/agents
+FIRST: Create a new branch FROM develop
+- Base branch: develop
 - Branch name: feat/pr-{number}-{feature-name}
 - Example: feat/pr-1-pencil-tool
 
 Commands:
-git checkout feat/agents
-git pull origin feat/agents
+git checkout develop
+git pull origin develop
 git checkout -b feat/pr-1-pencil-tool
 ```
 
@@ -190,7 +190,7 @@ describe('Multi-User Sync', () => {
 
 ### Step 7: Create Pull Request & Handoff
 
-**IMPORTANT: PR must target `feat/agents` branch, NOT `main`**
+**IMPORTANT: PR must target `develop` branch, NOT `main`**
 
 **Only proceed after user has completed manual review and given approval.**
 
@@ -210,7 +210,7 @@ PR #{number}: {Feature Name}
 Example: PR #1: Pencil Tool
 ```
 
-**Base branch:** `feat/agents`  
+**Base branch:** `develop`  
 **Compare branch:** `feat/pr-{number}-{feature-name}`
 
 **PR description must include:**
@@ -225,11 +225,11 @@ One sentence: what does this PR do?
 - Note any breaking changes
 
 ## Testing
-- [x] Integration tests created and passing
-- [x] Service unit tests created and passing (if service methods added)
-- [x] Utils unit tests created and passing (if utils added)
-- [x] Multi-user testing complete
-- [x] All acceptance gates pass
+- [ ] Integration tests created and passing
+- [ ] Service unit tests created and passing (if service methods added)
+- [ ] Utils unit tests created and passing (if utils added)
+- [ ] Multi-user testing complete
+- [ ] All acceptance gates pass
 - [ ] Visual verification (USER will do this manually)
 - [ ] Performance feel test (USER will do this manually)
 
@@ -413,9 +413,9 @@ Before submitting PR, review your own code:
 ## Example: Complete Workflow
 
 ```bash
-# 1. Create branch FROM feat/agents
-git checkout feat/agents
-git pull origin feat/agents
+# 1. Create branch FROM develop
+git checkout develop
+git pull origin develop
 git checkout -b feat/pr-1-pencil-tool
 
 # 2. Read PM Agent deliverables
@@ -458,12 +458,12 @@ npm run test
 # - Mobile testing
 # - Screenshots/video capture
 
-# 9. Create PR (targeting feat/agents) - ONLY after user approval
+# 9. Create PR (targeting develop) - ONLY after user approval
 git add .
 git commit -m "feat: add grouping functionality"
 git push origin feat/pr-1-grouping
 # Create PR on GitHub:
-#   - Base: feat/agents
+#   - Base: develop
 #   - Compare: feat/pr-1-grouping
 #   - Full description with screenshots
 

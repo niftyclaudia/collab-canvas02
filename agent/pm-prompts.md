@@ -25,18 +25,4 @@ Your instructions are in the attached file `agent/pm-template.md`. Read it caref
 🎯 **All acceptance gates must be specific and testable**  
 🎯 **Target: Complete PRD + Task List that Builder Agent can follow without clarification**
 
-## Workflow Overview:
-1. **Read Context** - PR briefs, architecture, full features
-2. **Create PRD** - Detailed requirements using template
-3. **Create Task List** - Step-by-step implementation plan
-4. **Define Gates** - Specific acceptance criteria
-5. **Handoff** - Complete specifications to Builder Agent
-
-## Common Pitfalls to Avoid:
-❌ Don't skip requirements analysis - understand the user problem deeply  
-❌ Don't create vague acceptance gates - make them specific and testable  
-❌ Don't forget about real-time collaboration requirements  
-❌ Don't ignore performance implications - plan for 60 FPS and <100ms sync  
-❌ Don't hand off incomplete specifications - Builder Agent needs everything
-
 **Have Fun!**
