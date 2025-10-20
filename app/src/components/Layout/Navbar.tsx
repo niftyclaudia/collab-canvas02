@@ -1,9 +1,12 @@
 import { useAuth } from '../../hooks/useAuth';
+import { useCanvas } from '../../hooks/useCanvas';
 import { usePresence } from '../../hooks/usePresence';
 import TeamIcons from './TeamIcons';
+import { CanvasSelector } from '../Canvas/CanvasSelector';
 
 export function Navbar() {
   const { user, logout, loading } = useAuth();
+  const { setShowDashboard } = useCanvas();
   const { onlineUsers, currentUser, totalOnlineCount } = usePresence();
 
   const handleLogout = async () => {
@@ -12,6 +15,10 @@ export function Navbar() {
     } catch (error) {
       console.error('Logout error:', error);
     }
+  };
+
+  const handleBackToDashboard = () => {
+    setShowDashboard(true);
   };
 
   if (!user) {
@@ -26,6 +33,14 @@ export function Navbar() {
             <div className="logo-icon">◆</div>
             <span className="logo-text">COLLABCANVAS</span>
           </div>
+          <button 
+            onClick={handleBackToDashboard}
+            className="back-to-dashboard-btn"
+            title="Back to Dashboard"
+          >
+            ← Dashboard
+          </button>
+          <CanvasSelector />
         </div>
 
         <div className="navbar-right">

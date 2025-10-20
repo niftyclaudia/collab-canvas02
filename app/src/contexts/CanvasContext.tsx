@@ -1,10 +1,11 @@
 import React, { createContext, useState, useEffect, useCallback, useRef } from 'react';
 import { DEFAULT_SHAPE_COLOR } from '../utils/constants';
 import { canvasService } from '../services/canvasService';
-import type { Shape, CreateShapeData } from '../services/canvasService';
+import type { Shape, CreateShapeData, Group, Canvas } from '../services/canvasService';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../utils/constants';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
+import type { ChatMessage } from '../types/chat';
 
 // Drawing state for shape preview during drag
 export interface DrawingState {
@@ -38,6 +39,10 @@ export interface CanvasState {
   isLoadingShapes: boolean;
   // Lock status tracking (client-side)
   lockStatus: Record<string, 'pending' | 'confirmed' | 'expired' | 'failed'>;
+  
+  // Groups state
+  groups: Group[];
+  isLoadingGroups: boolean;
   
   // Selection state
   selectedShapes: string[];
@@ -79,6 +84,13 @@ export interface CanvasState {
   updateShape: (shapeId: string, updates: any) => Promise<void>;
   clearCanvas: () => Promise<void>;
   
+  // Group operations
+  groupShapes: (shapeIds: string[], name?: string) => Promise<string>;
+  ungroupShapes: (groupId: string) => Promise<void>;
+  getShapesInGroup: (groupId: string) => Shape[];
+  isShapeInGroup: (shapeId: string) => boolean;
+  getGroupForShape: (shapeId: string) => Group | null;
+  
   // Locking operations
   lockShape: (shapeId: string) => Promise<boolean>;
   unlockShape: (shapeId: string) => Promise<void>;
@@ -91,6 +103,33 @@ export interface CanvasState {
   updateDrawing: (x: number, y: number) => void;
   finishDrawing: () => Promise<void>;
   cancelDrawing: () => void;
+  
+  // Chat state
+  chatMessages: ChatMessage[];
+  isChatOpen: boolean;
+  isChatProcessing: boolean;
+  chatDrawerHeight: number;
+  setChatMessages: (messages: ChatMessage[]) => void;
+  addChatMessage: (message: ChatMessage) => void;
+  clearChatMessages: () => void;
+  setChatOpen: (isOpen: boolean) => void;
+  setChatProcessing: (isProcessing: boolean) => void;
+  setChatDrawerHeight: (height: number) => void;
+  
+  // Canvas management state
+  currentCanvas: Canvas | null;
+  availableCanvases: Canvas[];
+  isLoadingCanvases: boolean;
+  switchCanvas: (canvasId: string) => Promise<void>;
+  createNewCanvas: (name: string, isShared: boolean) => Promise<void>;
+  updateCanvasName: (name: string) => Promise<void>;
+  deleteCurrentCanvas: () => Promise<void>;
+  duplicateCurrentCanvas: (newName: string) => Promise<void>;
+  
+  // Dashboard state
+  showDashboard: boolean;
+  setShowDashboard: (show: boolean) => void;
+  toggleCanvasSharing: () => Promise<void>;
 }
 
 export const CanvasContext = createContext<CanvasState | undefined>(undefined);
@@ -115,6 +154,10 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [isLoadingShapes, setIsLoadingShapes] = useState<boolean>(true);
   const [lockStatus, setLockStatus] = useState<Record<string, 'pending' | 'confirmed' | 'expired' | 'failed'>>({});
+  
+  // Groups state
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState<boolean>(true);
   const [drawingState, setDrawingState] = useState<DrawingState>(initialDrawingState);
   const [selectedShapes, setSelectedShapesState] = useState<string[]>([]);
   
@@ -130,6 +173,20 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     textDecoration: 'none',
     fontSize: 16,
   });
+  
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatProcessing, setIsChatProcessing] = useState(false);
+  const [chatDrawerHeight, setChatDrawerHeight] = useState(300);
+  
+  // Canvas management state
+  const [currentCanvas, setCurrentCanvas] = useState<Canvas | null>(null);
+  const [availableCanvases, setAvailableCanvases] = useState<Canvas[]>([]);
+  const [isLoadingCanvases, setIsLoadingCanvases] = useState<boolean>(true);
+  
+  // Dashboard state
+  const [showDashboard, setShowDashboard] = useState<boolean>(true);
   
   // Wrapper function to track manual deselection
   const setSelectedShapes = useCallback((shapeIds: string[]) => {
@@ -192,6 +249,24 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     };
   }, [user]);
 
+  // Subscribe to groups changes
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    setIsLoadingGroups(true);
+    
+    const unsubscribe = canvasService.subscribeToGroups('main', (updatedGroups) => {
+      setGroups(updatedGroups);
+      setIsLoadingGroups(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user]);
+
   // Shape operations
   const createShape = useCallback(async (shapeData: Omit<CreateShapeData, 'createdBy'>) => {
     if (!user) {
@@ -235,6 +310,57 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
       throw error;
     }
   }, [showToast]);
+
+  // Group operations
+  const groupShapes = useCallback(async (shapeIds: string[], name?: string) => {
+    if (!user) {
+      throw new Error('User must be authenticated to group shapes');
+    }
+    
+    try {
+      const groupId = await canvasService.groupShapes(shapeIds, user.uid, name);
+      showToast(`Grouped ${shapeIds.length} shapes`, 'success');
+      
+      // Keep the shapes selected after grouping
+      // The shapes will be updated with groupId via the subscription
+      // but we want to keep them selected to show the group is working
+      setSelectedShapesState(shapeIds);
+      return groupId;
+    } catch (error) {
+      console.error('Failed to group shapes:', error);
+      showToast('Failed to group shapes', 'error');
+      throw error;
+    }
+  }, [user, showToast]);
+
+  const ungroupShapes = useCallback(async (groupId: string) => {
+    try {
+      await canvasService.ungroupShapes(groupId);
+      showToast('Shapes ungrouped', 'success');
+    } catch (error) {
+      console.error('Failed to ungroup shapes:', error);
+      showToast('Failed to ungroup shapes', 'error');
+      throw error;
+    }
+  }, [showToast]);
+
+  const getShapesInGroup = useCallback((groupId: string): Shape[] => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return [];
+    
+    return shapes.filter(shape => group.shapeIds.includes(shape.id));
+  }, [groups, shapes]);
+
+  const isShapeInGroup = useCallback((shapeId: string): boolean => {
+    return shapes.some(shape => shape.id === shapeId && shape.groupId);
+  }, [shapes]);
+
+  const getGroupForShape = useCallback((shapeId: string): Group | null => {
+    const shape = shapes.find(s => s.id === shapeId);
+    if (!shape || !shape.groupId) return null;
+    
+    return groups.find(g => g.id === shape.groupId) || null;
+  }, [shapes, groups]);
 
   // Drawing helpers
   const startDrawing = useCallback((x: number, y: number) => {
@@ -406,6 +532,23 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
 
   const cancelDrawing = useCallback(() => {
     setDrawingState(initialDrawingState);
+  }, []);
+
+  // Chat helper functions
+  const addChatMessage = useCallback((message: ChatMessage) => {
+    setChatMessages(prev => {
+      // Check if message already exists to prevent duplicates
+      const exists = prev.some(existing => existing.id === message.id);
+      if (exists) {
+        console.warn('Duplicate message ID detected:', message.id);
+        return prev;
+      }
+      return [...prev, message];
+    });
+  }, []);
+
+  const clearChatMessages = useCallback(() => {
+    setChatMessages([]);
   }, []);
 
   // Text editing functions
@@ -775,6 +918,204 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     };
   }, []);
 
+  // Canvas management methods
+  const switchCanvas = useCallback(async (canvasId: string) => {
+    if (!user) {
+      throw new Error('User must be authenticated to switch canvases');
+    }
+
+    try {
+      // Update canvas service to use new canvas
+      canvasService.setCurrentCanvas(canvasId);
+      
+      // Update last accessed info
+      await canvasService.updateCanvasAccess(canvasId, user.uid);
+      
+      // Get canvas info
+      const canvas = await canvasService.getCanvas(canvasId);
+      if (!canvas) {
+        throw new Error('Canvas not found');
+      }
+      
+      setCurrentCanvas(canvas);
+      
+      // Switch to canvas view
+      setShowDashboard(false);
+      
+      // Clear current state
+      setShapes([]);
+      setGroups([]);
+      setSelectedShapes([]);
+      setDrawingState(initialDrawingState);
+      
+      showToast(`Switched to ${canvas.name}`, 'success');
+    } catch (error) {
+      console.error('Failed to switch canvas:', error);
+      showToast('Failed to switch canvas', 'error');
+      throw error;
+    }
+  }, [user, showToast]);
+
+  const createNewCanvas = useCallback(async (name: string, isShared: boolean) => {
+    if (!user) {
+      throw new Error('User must be authenticated to create canvases');
+    }
+
+    try {
+      const newCanvas = await canvasService.createCanvas(name, user.uid, isShared);
+      
+      // Add to available canvases
+      setAvailableCanvases(prev => [newCanvas, ...prev]);
+      
+      // Switch to new canvas
+      await switchCanvas(newCanvas.id);
+      
+      showToast(`Created ${isShared ? 'shared' : 'private'} canvas: ${name}`, 'success');
+    } catch (error) {
+      console.error('Failed to create canvas:', error);
+      showToast('Failed to create canvas', 'error');
+      throw error;
+    }
+  }, [user, showToast, switchCanvas]);
+
+  const updateCanvasName = useCallback(async (name: string) => {
+    if (!currentCanvas) {
+      throw new Error('No canvas selected');
+    }
+
+    try {
+      await canvasService.updateCanvasName(currentCanvas.id, name);
+      
+      // Update local state
+      setCurrentCanvas(prev => prev ? { ...prev, name } : null);
+      setAvailableCanvases(prev => 
+        prev.map(canvas => 
+          canvas.id === currentCanvas.id ? { ...canvas, name } : canvas
+        )
+      );
+      
+      showToast(`Canvas renamed to ${name}`, 'success');
+    } catch (error) {
+      console.error('Failed to update canvas name:', error);
+      showToast('Failed to rename canvas', 'error');
+      throw error;
+    }
+  }, [currentCanvas, showToast]);
+
+  const deleteCurrentCanvas = useCallback(async () => {
+    if (!currentCanvas) {
+      throw new Error('No canvas selected');
+    }
+
+    try {
+      await canvasService.deleteCanvas(currentCanvas.id);
+      
+      // Remove from available canvases
+      setAvailableCanvases(prev => prev.filter(canvas => canvas.id !== currentCanvas.id));
+      
+      // Switch to first available canvas or create default
+      if (availableCanvases.length > 1) {
+        const nextCanvas = availableCanvases.find(canvas => canvas.id !== currentCanvas.id);
+        if (nextCanvas) {
+          await switchCanvas(nextCanvas.id);
+        }
+      } else {
+        // Create default canvas if no others exist
+        await createNewCanvas('My Canvas', true);
+      }
+      
+      showToast(`Deleted canvas: ${currentCanvas.name}`, 'success');
+    } catch (error) {
+      console.error('Failed to delete canvas:', error);
+      showToast('Failed to delete canvas', 'error');
+      throw error;
+    }
+  }, [currentCanvas, availableCanvases, showToast, switchCanvas, createNewCanvas]);
+
+  const duplicateCurrentCanvas = useCallback(async (newName: string) => {
+    if (!currentCanvas || !user) {
+      throw new Error('No canvas selected or user not authenticated');
+    }
+
+    try {
+      const duplicatedCanvas = await canvasService.duplicateCanvas(
+        currentCanvas.id, 
+        newName, 
+        user.uid
+      );
+      
+      // Add to available canvases
+      setAvailableCanvases(prev => [duplicatedCanvas, ...prev]);
+      
+      // Switch to duplicated canvas
+      await switchCanvas(duplicatedCanvas.id);
+      
+      showToast(`Duplicated canvas: ${newName}`, 'success');
+    } catch (error) {
+      console.error('Failed to duplicate canvas:', error);
+      showToast('Failed to duplicate canvas', 'error');
+      throw error;
+    }
+  }, [currentCanvas, user, showToast, switchCanvas]);
+
+  const toggleCanvasSharing = useCallback(async () => {
+    if (!currentCanvas) {
+      throw new Error('No canvas selected');
+    }
+
+    try {
+      const newSharingStatus = !currentCanvas.isShared;
+      await canvasService.updateCanvasSharing(currentCanvas.id, newSharingStatus);
+      
+      // Update local state
+      setCurrentCanvas(prev => prev ? { ...prev, isShared: newSharingStatus } : null);
+      setAvailableCanvases(prev => 
+        prev.map(canvas => 
+          canvas.id === currentCanvas.id 
+            ? { ...canvas, isShared: newSharingStatus }
+            : canvas
+        )
+      );
+      
+      showToast(
+        `Canvas is now ${newSharingStatus ? 'shared' : 'private'}`, 
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to toggle canvas sharing:', error);
+      showToast('Failed to update canvas sharing', 'error');
+      throw error;
+    }
+  }, [currentCanvas, showToast]);
+
+  // Load canvases when user changes
+  useEffect(() => {
+    if (!user) {
+      setAvailableCanvases([]);
+      setCurrentCanvas(null);
+      setIsLoadingCanvases(false);
+      return;
+    }
+
+    const loadCanvases = async () => {
+      try {
+        setIsLoadingCanvases(true);
+        const canvases = await canvasService.getCanvases(user.uid);
+        setAvailableCanvases(canvases);
+        
+        // Don't automatically switch to canvas - let user choose from dashboard
+        // The dashboard will handle creating a default canvas if needed
+      } catch (error) {
+        console.error('Failed to load canvases:', error);
+        showToast('Failed to load canvases', 'error');
+      } finally {
+        setIsLoadingCanvases(false);
+      }
+    };
+
+    loadCanvases();
+  }, [user, showToast, switchCanvas, createNewCanvas, currentCanvas]);
+
   const value: CanvasState = {
     mode,
     setMode,
@@ -785,6 +1126,8 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     shapes,
     isLoadingShapes,
     lockStatus,
+    groups,
+    isLoadingGroups,
     selectedShapes,
     setSelectedShapes,
     toggleSelection,
@@ -810,6 +1153,11 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     createShape,
     updateShape,
     clearCanvas,
+    groupShapes,
+    ungroupShapes,
+    getShapesInGroup,
+    isShapeInGroup,
+    getGroupForShape,
     lockShape,
     unlockShape,
     isShapeLockedByMe,
@@ -819,6 +1167,27 @@ export function CanvasProvider({ children }: CanvasProviderProps) {
     updateDrawing,
     finishDrawing,
     cancelDrawing,
+    chatMessages,
+    isChatOpen,
+    isChatProcessing,
+    chatDrawerHeight,
+    setChatMessages,
+    addChatMessage,
+    clearChatMessages,
+    setChatOpen: setIsChatOpen,
+    setChatProcessing: setIsChatProcessing,
+    setChatDrawerHeight,
+    currentCanvas,
+    availableCanvases,
+    isLoadingCanvases,
+    switchCanvas,
+    createNewCanvas,
+    updateCanvasName,
+    deleteCurrentCanvas,
+    duplicateCurrentCanvas,
+    toggleCanvasSharing,
+    showDashboard,
+    setShowDashboard,
   };
 
   return (

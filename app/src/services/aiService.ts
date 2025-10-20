@@ -2,6 +2,8 @@ import OpenAI from 'openai';
 import { CanvasService } from './canvasService';
 import { getSystemPrompt } from '../utils/aiPrompts';
 import { logger, LogCategory } from '../utils/logger';
+import { calculateRowLayout, calculateAlignment, calculateEvenSpacing } from '../utils/layoutCalculator';
+import type { ChatMessage } from '../types/chat';
 
 interface CommandResult {
   success: boolean;
@@ -9,9 +11,19 @@ interface CommandResult {
   toolCalls: any[];
 }
 
+interface ComplexCommandResult {
+  success: boolean;
+  stepsCompleted: number;
+  totalSteps: number;
+  createdShapes: string[];
+  errors: string[];
+  message: string;
+}
+
 interface AIServiceOptions {
   onError?: (message: string) => void;
   onSuccess?: (message: string) => void;
+  onSelectionUpdate?: (shapeIds: string[]) => void;
 }
 
 export class AIService {
@@ -19,6 +31,20 @@ export class AIService {
   private canvasService: CanvasService;
   private onError?: (message: string) => void;
   private onSuccess?: (message: string) => void;
+  private onSelectionUpdate?: (shapeIds: string[]) => void;
+  private responseCache: Map<string, { result: CommandResult; timestamp: number }> = new Map();
+  private readonly CACHE_TTL = 300000; // 5 minutes
+  private performanceMetrics: {
+    totalRequests: number;
+    averageResponseTime: number;
+    cacheHits: number;
+    lastResponseTime: number;
+  } = {
+    totalRequests: 0,
+    averageResponseTime: 0,
+    cacheHits: 0,
+    lastResponseTime: 0,
+  };
   
   constructor(options?: AIServiceOptions) {
     this.openai = new OpenAI({
@@ -28,31 +54,83 @@ export class AIService {
     this.canvasService = new CanvasService();
     this.onError = options?.onError;
     this.onSuccess = options?.onSuccess;
+    this.onSelectionUpdate = options?.onSelectionUpdate;
   }
   
-  async executeCommand(prompt: string, userId: string): Promise<CommandResult> {
+  async executeCommand(prompt: string, userId: string, selectedShapes?: string[]): Promise<CommandResult> {
+    const startTime = Date.now();
+    
     try {
-      // 1. Get current canvas state for context
-      const shapes = await this.canvasService.getShapes();
+      // Check cache first for identical prompts
+      const cacheKey = `${prompt.toLowerCase().trim()}_${userId}`;
+      const cached = this.responseCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
+        this.performanceMetrics.cacheHits++;
+        this.updatePerformanceMetrics(startTime);
+        return cached.result;
+      }
+
+      // Check for random shapes requests and handle them specially
+      const isRandomShapesRequest = prompt.toLowerCase().includes('random shapes');
+      const shapeCountMatch = prompt.match(/(\d+)\s+random\s+shapes/);
       
-      // 2. Call OpenAI with function tools
+      console.log(`🔍 Checking for random shapes: isRandomShapesRequest=${isRandomShapesRequest}, shapeCountMatch=${shapeCountMatch}`);
+      
+      if (isRandomShapesRequest && shapeCountMatch) {
+        const totalCount = parseInt(shapeCountMatch[1]);
+        const countPerType = Math.floor(totalCount / 3);
+        
+        console.log(`🎲 Detected random shapes request: ${totalCount} shapes (${countPerType} per type)`);
+        
+        // Create the 3 different shape types directly
+        const results = await this.createRandomShapesDirectly(countPerType, userId);
+        
+        const successMessage = `✓ Created ${totalCount} random shapes (${countPerType} rectangles, ${countPerType} circles, ${countPerType} triangles)`;
+        
+        const result = {
+          success: true,
+          message: successMessage,
+          toolCalls: results
+        };
+
+        // Cache the result
+        this.responseCache.set(cacheKey, { result, timestamp: Date.now() });
+        
+        if (this.onSuccess) {
+          this.onSuccess(successMessage);
+        }
+        
+        this.updatePerformanceMetrics(startTime);
+        return result;
+      }
+      
+      // 1. Get current canvas state for context (optimized)
+      const [shapes, groups] = await Promise.all([
+        this.canvasService.getShapes(),
+        this.canvasService.getGroups()
+      ]);
+      
+      // 2. Call OpenAI with function tools (optimized prompt)
+      const systemPrompt = getSystemPrompt(shapes, groups, selectedShapes);
+      const optimizedPrompt = this.optimizePrompt(prompt);
+      
       const response = await this.openai.chat.completions.create({
         model: "gpt-4-turbo-preview",
         messages: [
-          { role: "system", content: getSystemPrompt(shapes) },
-          { role: "user", content: prompt }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: optimizedPrompt }
         ],
         tools: this.getToolDefinitions(),
         tool_choice: "required", // Force the AI to use tools
         temperature: 0.1,
-        max_tokens: 500
+        max_tokens: 1500 // Reduced for faster response
       });
       
       const message = response.choices[0].message;
       
       // 3. Execute tool calls
       if (message.tool_calls && message.tool_calls.length > 0) {
-        const results = await this.executeToolCalls(message.tool_calls, userId);
+        const results = await this.executeToolCalls(message.tool_calls, userId, selectedShapes);
         
         // Check if only getCanvasState was called (indicates shape not found)
         const onlyGetCanvasState = results.length === 1 && results[0].tool === 'getCanvasState';
@@ -71,6 +149,14 @@ export class AIService {
           };
         }
         
+        // Check for random shapes validation
+        const multipleShapesCalls = results.filter(r => r.tool === 'createMultipleShapes' && r.success);
+        
+        if (isRandomShapesRequest && multipleShapesCalls.length === 1) {
+          console.warn('⚠️ AI only created one type of shapes for random shapes request');
+          // Don't fail the request, but log the issue
+        }
+        
         const successMessage = this.generateSuccessMessage(results);
         
         // Show success toast for object modifications
@@ -78,11 +164,16 @@ export class AIService {
           this.onSuccess(successMessage);
         }
         
-        return {
+        const result = {
           success: true,
           message: successMessage,
           toolCalls: results
         };
+
+        // Cache the result
+        this.responseCache.set(cacheKey, { result, timestamp: Date.now() });
+        this.updatePerformanceMetrics(startTime);
+        return result;
       } else {
         const notUnderstoodMessage = message.content || "I couldn't understand that command.";
         
@@ -91,11 +182,13 @@ export class AIService {
           this.onError(`⚠️ ${notUnderstoodMessage}`);
         }
         
-        return {
+        const result = {
           success: false,
           message: notUnderstoodMessage,
           toolCalls: []
         };
+        this.updatePerformanceMetrics(startTime);
+        return result;
       }
     } catch (error: any) {
       console.error('AI execution error:', error);
@@ -115,6 +208,7 @@ export class AIService {
         this.onError(errorMessage);
       }
       
+      this.updatePerformanceMetrics(startTime);
       return {
         success: false,
         message: "⚠️ AI service error. Please try again.",
@@ -122,17 +216,547 @@ export class AIService {
       };
     }
   }
-  
-  private async executeToolCalls(toolCalls: any[], userId: string) {
-    const results = [];
-    for (const call of toolCalls) {
+
+  /**
+   * Update performance metrics
+   */
+  private updatePerformanceMetrics(startTime: number): void {
+    const responseTime = Date.now() - startTime;
+    this.performanceMetrics.totalRequests++;
+    this.performanceMetrics.lastResponseTime = responseTime;
+    
+    // Calculate rolling average
+    this.performanceMetrics.averageResponseTime = 
+      (this.performanceMetrics.averageResponseTime * (this.performanceMetrics.totalRequests - 1) + responseTime) / 
+      this.performanceMetrics.totalRequests;
+  }
+
+  /**
+   * Optimize prompt for faster AI processing
+   */
+  private optimizePrompt(prompt: string): string {
+    // Remove unnecessary words and optimize for AI processing
+    return prompt
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim()
+      .toLowerCase()
+      .replace(/please\s+/g, '') // Remove polite words
+      .replace(/can you\s+/g, '') // Remove question words
+      .replace(/\?/g, '') // Remove question marks
+      .trim();
+  }
+
+  /**
+   * Get performance metrics for monitoring
+   */
+  getPerformanceMetrics(): {
+    totalRequests: number;
+    averageResponseTime: number;
+    cacheHits: number;
+    cacheHitRate: number;
+    lastResponseTime: number;
+  } {
+    return {
+      totalRequests: this.performanceMetrics.totalRequests,
+      averageResponseTime: this.performanceMetrics.averageResponseTime,
+      cacheHits: this.performanceMetrics.cacheHits,
+      cacheHitRate: this.performanceMetrics.totalRequests > 0 
+        ? (this.performanceMetrics.cacheHits / this.performanceMetrics.totalRequests) * 100 
+        : 0,
+      lastResponseTime: this.performanceMetrics.lastResponseTime,
+    };
+  }
+
+  /**
+   * Clear response cache
+   */
+  clearCache(): void {
+    this.responseCache.clear();
+  }
+
+  /**
+   * Send a message through the AI chat interface
+   * @param content The message content from the user
+   * @param userId The user ID
+   * @returns Promise<ChatMessage> The AI response message
+   */
+  async sendMessage(content: string, userId: string, selectedShapes?: string[]): Promise<ChatMessage> {
+    try {
+      // Create user message
+      // const userMessage: ChatMessage = {
+      //   id: this.generateMessageId(),
+      //   type: 'user',
+      //   content,
+      //   timestamp: new Date(),
+      //   status: 'processing'
+      // };
+
+      // Execute the AI command
+      const result = await this.executeCommand(content, userId, selectedShapes);
+
+      // Create AI response message
+      const aiMessage: ChatMessage = {
+        id: this.generateMessageId(),
+        type: 'ai',
+        content: result.message,
+        timestamp: new Date(),
+        status: result.success ? 'success' : 'error'
+      };
+
+      return aiMessage;
+    } catch (error: any) {
+      console.error('Chat message error:', error);
+      
+      // Return error message
+      return {
+        id: this.generateMessageId(),
+        type: 'ai',
+        content: "⚠️ AI service error. Please try again.",
+        timestamp: new Date(),
+        status: 'error'
+      };
+    }
+  }
+
+  /**
+   * Generate a unique message ID
+   */
+  private generateMessageId(): string {
+    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${performance.now()}`;
+  }
+
+  /**
+   * Execute complex multi-step AI commands with progress feedback
+   * @param command The complex command to execute
+   * @param userId The user ID
+   * @param context Optional canvas state context
+   * @returns Promise<ComplexCommandResult>
+   */
+  async executeComplexCommand(
+    command: string, 
+    userId: string
+  ): Promise<ComplexCommandResult> {
+    try {
+      const lowerCommand = command.toLowerCase();
+      console.log(`🔍 [Complex Command] Processing: "${command}"`);
+      console.log(`🔍 [Complex Command] Lower: "${lowerCommand}"`);
+      
+      // Check for specific complex commands
+      if (lowerCommand.includes('create login form') || lowerCommand.includes('login form')) {
+        return await this.createLoginForm(userId);
+      }
+      
+      // Check for specific grid patterns
+      if (lowerCommand.includes('3x3 grid') || lowerCommand.includes('create 3x3 grid') || 
+          lowerCommand.includes('make 3x3 grid')) {
+        const useRandomColors = lowerCommand.includes('random') && lowerCommand.includes('color');
+        return await this.createGrid(userId, 3, 3, 50, undefined, useRandomColors);
+      }
+      
+      if (lowerCommand.includes('4x4 grid') || lowerCommand.includes('create 4x4 grid') || 
+          lowerCommand.includes('make 4x4 grid')) {
+        const useRandomColors = lowerCommand.includes('random') && lowerCommand.includes('color');
+        console.log(`🔍 [Complex Command] 4x4 grid detected, useRandomColors: ${useRandomColors}`);
+        return await this.createGrid(userId, 4, 4, 50, undefined, useRandomColors);
+      }
+      
+      // Generic grid pattern matching
+      if ((lowerCommand.includes('make') || lowerCommand.includes('create')) && lowerCommand.includes('grid')) {
+        // Parse grid dimensions from command
+        const gridMatch = command.match(/(\d+)x(\d+)\s+grid/);
+        if (gridMatch) {
+          const rows = parseInt(gridMatch[1]);
+          const cols = parseInt(gridMatch[2]);
+          const useRandomColors = lowerCommand.includes('random') && lowerCommand.includes('color');
+          return await this.createGrid(userId, rows, cols, 50, undefined, useRandomColors);
+        }
+      }
+      
+      // Fallback to regular command execution
+      const result = await this.executeCommand(command, userId);
+      return {
+        success: result.success,
+        stepsCompleted: result.success ? 1 : 0,
+        totalSteps: 1,
+        createdShapes: result.toolCalls.filter(tc => tc.success).map(tc => tc.result?.id).filter(Boolean),
+        errors: result.success ? [] : [result.message],
+        message: result.message
+      };
+    } catch (error: any) {
+      console.error('Complex command execution error:', error);
+      return {
+        success: false,
+        stepsCompleted: 0,
+        totalSteps: 1,
+        createdShapes: [],
+        errors: [error.message || 'Unknown error'],
+        message: `❌ Failed to execute complex command: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Create a login form with 6 properly positioned elements
+   * @param userId The user ID
+   * @param position Optional position for the form
+   * @returns Promise<ComplexCommandResult>
+   */
+  async createLoginForm(userId: string, position?: {x: number, y: number}): Promise<ComplexCommandResult> {
+    const startX = position?.x || 2000;
+    const startY = position?.y || 2000;
+    const createdShapes: string[] = [];
+    const errors: string[] = [];
+    let stepsCompleted = 0;
+    const totalSteps = 11; // 1 background + 1 title + 2 labels + 2 inputs + 2 placeholders + 1 button + 1 button text + 1 grouping
+
+    try {
+      // Step 1: Create form background (clean, minimal design)
       try {
-        const result = await this.executeSingleTool(call, userId);
-        results.push({
+        const background = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX,
+          y: startY - 25,
+          width: 260,
+          height: 290,
+          color: '#f8f9fa',
+          createdBy: userId
+        });
+        createdShapes.push(background.id);
+        stepsCompleted++;
+        console.log('✅ Step 1: Created clean form background');
+      } catch (error: any) {
+        errors.push(`Failed to create form background: ${error.message}`);
+        console.error('❌ Step 1 failed:', error);
+      }
+
+      // Step 2: Create title (properly centered)
+      try {
+        const title = await this.canvasService.createText(
+          'Login Form',
+          startX + 50, // True center: startX + (260/2) - (textWidth/2) = startX + 130 - 80 = startX + 50
+          startY,
+          24,
+          '#000000',
+          'bold',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(title.id);
+        stepsCompleted++;
+        console.log('✅ Step 2: Created properly centered title');
+      } catch (error: any) {
+        errors.push(`Failed to create title: ${error.message}`);
+        console.error('❌ Step 2 failed:', error);
+      }
+
+      // Step 3: Create username label
+      try {
+        const usernameLabel = await this.canvasService.createText(
+          'Username:',
+          startX + 25,
+          startY + 50,
+          16,
+          '#000000',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(usernameLabel.id);
+        stepsCompleted++;
+        console.log('✅ Step 3: Created username label');
+      } catch (error: any) {
+        errors.push(`Failed to create username label: ${error.message}`);
+        console.error('❌ Step 3 failed:', error);
+      }
+
+      // Step 4: Create username input
+      try {
+        const usernameInput = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 25,
+          y: startY + 70,
+          width: 200,
+          height: 30,
+          color: '#ffffff',
+          createdBy: userId
+        });
+        createdShapes.push(usernameInput.id);
+        stepsCompleted++;
+        console.log('✅ Step 4: Created username input');
+      } catch (error: any) {
+        errors.push(`Failed to create username input: ${error.message}`);
+        console.error('❌ Step 4 failed:', error);
+      }
+
+      // Step 5: Add username placeholder text (left-aligned with input)
+      try {
+        const usernamePlaceholder = await this.canvasService.createText(
+          'Enter username',
+          startX + 30, // Left-aligned with input field (input starts at startX + 25, so +5 for padding)
+          startY + 80, // Center vertically: startY + 70 (input top) + 15 (half of 30px height) - 5 (text height offset for true center)
+          12,
+          '#999999',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(usernamePlaceholder.id);
+        stepsCompleted++;
+        console.log('✅ Step 5: Added username placeholder text (left-aligned)');
+      } catch (error: any) {
+        errors.push(`Failed to create username placeholder: ${error.message}`);
+        console.error('❌ Step 5 failed:', error);
+      }
+
+      // Step 6: Create password label
+      try {
+        const passwordLabel = await this.canvasService.createText(
+          'Password:',
+          startX + 25,
+          startY + 120,
+          16,
+          '#000000',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(passwordLabel.id);
+        stepsCompleted++;
+        console.log('✅ Step 6: Created password label');
+      } catch (error: any) {
+        errors.push(`Failed to create password label: ${error.message}`);
+        console.error('❌ Step 6 failed:', error);
+      }
+
+      // Step 7: Create password input
+      try {
+        const passwordInput = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 25,
+          y: startY + 140,
+          width: 200,
+          height: 30,
+          color: '#ffffff',
+          createdBy: userId
+        });
+        createdShapes.push(passwordInput.id);
+        stepsCompleted++;
+        console.log('✅ Step 7: Created password input');
+      } catch (error: any) {
+        errors.push(`Failed to create password input: ${error.message}`);
+        console.error('❌ Step 7 failed:', error);
+      }
+
+      // Step 8: Add password placeholder text (left-aligned with input)
+      try {
+        const passwordPlaceholder = await this.canvasService.createText(
+          'Enter password',
+          startX + 30, // Left-aligned with input field (input starts at startX + 25, so +5 for padding)
+          startY + 150, // Center vertically: startY + 140 (input top) + 15 (half of 30px height) - 5 (text height offset for true center)
+          12,
+          '#999999',
+          'normal',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(passwordPlaceholder.id);
+        stepsCompleted++;
+        console.log('✅ Step 8: Added password placeholder text (left-aligned)');
+      } catch (error: any) {
+        errors.push(`Failed to create password placeholder: ${error.message}`);
+        console.error('❌ Step 8 failed:', error);
+      }
+
+      // Step 9: Create login button (properly centered)
+      try {
+        const loginButton = await this.canvasService.createShape({
+          type: 'rectangle',
+          x: startX + 80, // True center: startX + (260-100)/2 = startX + 80
+          y: startY + 200,
+          width: 100,
+          height: 40,
+          color: '#2563eb', // Darker blue for better contrast
+          createdBy: userId
+        });
+        createdShapes.push(loginButton.id);
+        stepsCompleted++;
+        console.log('✅ Step 9: Created properly centered login button');
+      } catch (error: any) {
+        errors.push(`Failed to create login button: ${error.message}`);
+        console.error('❌ Step 9 failed:', error);
+      }
+
+      // Step 10: Add "Submit" text to button (center-aligned)
+      try {
+        const buttonText = await this.canvasService.createText(
+          'Submit',
+          startX + 102, // True center: button center (startX + 130) - (textWidth/2) = startX + 130 - 28 = startX + 102
+          startY + 213, // Center vertically: startY + 200 (button top) + 20 (half of 40px height) - 7 (text height offset)
+          14,
+          '#ffffff',
+          'bold',
+          'normal',
+          'none',
+          userId
+        );
+        createdShapes.push(buttonText.id);
+        stepsCompleted++;
+        console.log('✅ Step 10: Added center-aligned button text');
+      } catch (error: any) {
+        errors.push(`Failed to create button text: ${error.message}`);
+        console.error('❌ Step 10 failed:', error);
+      }
+
+      // Step 11: Group all form elements together
+      try {
+        if (createdShapes.length > 0) {
+          await this.canvasService.groupShapes(createdShapes, userId);
+          stepsCompleted++;
+          console.log('✅ Step 11: Grouped all form elements together');
+        }
+      } catch (error: any) {
+        errors.push(`Failed to group form elements: ${error.message}`);
+        console.error('❌ Step 11 failed:', error);
+      }
+
+      const success = stepsCompleted === totalSteps;
+      const message = success 
+        ? `✅ Login form created with ${stepsCompleted} elements`
+        : `⚠️ Login form partially created: ${stepsCompleted}/${totalSteps} elements (${errors.length} errors)`;
+
+      return {
+        success,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors,
+        message
+      };
+
+    } catch (error: any) {
+      console.error('❌ Login form creation failed:', error);
+      return {
+        success: false,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors: [...errors, `Login form creation failed: ${error.message}`],
+        message: `❌ Failed to create login form: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Create a grid of shapes
+   * @param userId The user ID
+   * @param rows Number of rows
+   * @param cols Number of columns
+   * @param spacing Spacing between shapes
+   * @param position Optional position for the grid
+   * @returns Promise<ComplexCommandResult>
+   */
+  async createGrid(
+    userId: string, 
+    rows: number, 
+    cols: number, 
+    spacing: number,
+    position?: {x: number, y: number},
+    useRandomColors: boolean = false
+  ): Promise<ComplexCommandResult> {
+    const startX = position?.x || 2000;
+    const startY = position?.y || 2000;
+    const createdShapes: string[] = [];
+    const errors: string[] = [];
+    let stepsCompleted = 0;
+    const totalSteps = rows * cols;
+
+    try {
+      const shapeSize = 60;
+      const colors = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899'];
+      const defaultColor = '#3b82f6'; // Single color for grids without random colors
+      
+      console.log(`🔍 [createGrid] Creating ${rows}x${cols} grid, useRandomColors: ${useRandomColors}`);
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          try {
+            const x = startX + (col * (shapeSize + spacing));
+            const y = startY + (row * (shapeSize + spacing));
+            const color = useRandomColors ? colors[(row * cols + col) % colors.length] : defaultColor;
+            console.log(`🔍 [createGrid] Shape at (${x}, ${y}) using color: ${color}`);
+
+            const shape = await this.canvasService.createShape({
+              type: 'rectangle',
+              x,
+              y,
+              width: shapeSize,
+              height: shapeSize,
+              color,
+              createdBy: userId
+            });
+            
+            createdShapes.push(shape.id);
+            stepsCompleted++;
+            console.log(`✅ Step ${stepsCompleted}: Created shape at (${x}, ${y})`);
+          } catch (error: any) {
+            errors.push(`Failed to create shape at row ${row}, col ${col}: ${error.message}`);
+            console.error(`❌ Step ${stepsCompleted + 1} failed:`, error);
+          }
+        }
+      }
+
+      const success = stepsCompleted === totalSteps;
+      const message = success 
+        ? `✅ ${rows}x${cols} grid created with ${stepsCompleted} shapes`
+        : `⚠️ Grid partially created: ${stepsCompleted}/${totalSteps} shapes (${errors.length} errors)`;
+
+      return {
+        success,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors,
+        message
+      };
+
+    } catch (error: any) {
+      console.error('❌ Grid creation failed:', error);
+      return {
+        success: false,
+        stepsCompleted,
+        totalSteps,
+        createdShapes,
+        errors: [...errors, `Grid creation failed: ${error.message}`],
+        message: `❌ Failed to create grid: ${error.message}`
+      };
+    }
+  }
+  
+  private async executeToolCalls(toolCalls: any[], userId: string, selectedShapes?: string[]): Promise<any[]> {
+    // Check if we have multiple shape creation calls that can be batched
+    const createShapeCalls = toolCalls.filter(call => 
+      ['createRectangle', 'createCircle', 'createTriangle'].includes(call.function.name)
+    );
+    
+    if (createShapeCalls.length > 1) {
+      // Use batch creation for multiple shapes
+      return await this.executeBatchShapeCreation(createShapeCalls, toolCalls, userId, selectedShapes);
+    }
+    
+    // Execute tool calls in parallel for better performance
+    const promises = toolCalls.map(async (call) => {
+      try {
+        const result = await this.executeSingleTool(call, userId, selectedShapes);
+        return {
           tool: call.function.name,
           success: true,
           result: result
-        });
+        };
       } catch (error: any) {
         // Show toast notification for any object creation/modification error
         if (this.onError && this.isObjectModificationTool(call.function.name)) {
@@ -152,23 +776,324 @@ export class AIService {
           this.onError(errorMessage);
         }
         
-        results.push({
+        return {
           tool: call.function.name,
           success: false,
           error: error.message
-        });
+        };
       }
-    }
+    });
+    
+    // Wait for all tool calls to complete in parallel
+    const results = await Promise.all(promises);
     return results;
   }
   
-  private async executeSingleTool(call: any, userId: string) {
+  private async executeBatchShapeCreation(createShapeCalls: any[], allToolCalls: any[], userId: string, selectedShapes?: string[]): Promise<any[]> {
+    try {
+      // Convert tool calls to shape data
+      const shapesData = createShapeCalls.map(call => {
+        const args = JSON.parse(call.function.arguments);
+        const { name } = call.function;
+        
+        if (name === 'createRectangle') {
+          return {
+            type: 'rectangle' as const,
+            x: args.x,
+            y: args.y,
+            width: args.width,
+            height: args.height,
+            color: args.color,
+            rotation: 0,
+            createdBy: userId
+          };
+        } else if (name === 'createCircle') {
+          return {
+            type: 'circle' as const,
+            x: args.x,
+            y: args.y,
+            width: args.radius * 2,
+            height: args.radius * 2,
+            radius: args.radius,
+            color: args.color,
+            rotation: 0,
+            createdBy: userId
+          };
+        } else if (name === 'createTriangle') {
+          return {
+            type: 'triangle' as const,
+            x: args.x,
+            y: args.y,
+            width: args.width,
+            height: args.height,
+            color: args.color,
+            rotation: 0,
+            createdBy: userId
+          };
+        }
+        return null;
+      }).filter((shape): shape is NonNullable<typeof shape> => shape !== null);
+      
+      // Create all shapes in a single batch operation
+      const createdShapes = await this.canvasService.createShapesBatch(shapesData);
+      
+      // Execute remaining tool calls in parallel
+      const otherCalls = allToolCalls.filter(call => 
+        !['createRectangle', 'createCircle', 'createTriangle'].includes(call.function.name)
+      );
+      
+      const otherResults = otherCalls.length > 0 
+        ? await Promise.all(otherCalls.map(async (call) => {
+            try {
+              const result = await this.executeSingleTool(call, userId, selectedShapes);
+              return {
+                tool: call.function.name,
+                success: true,
+                result: result
+              };
+            } catch (error: any) {
+              return {
+                tool: call.function.name,
+                success: false,
+                error: error.message
+              };
+            }
+          }))
+        : [];
+      
+      // Combine results
+      const batchResults = createShapeCalls.map((call, index) => ({
+        tool: call.function.name,
+        success: true,
+        result: createdShapes[index]
+      }));
+      
+      return [...batchResults, ...otherResults];
+    } catch (error: any) {
+      // If batch fails, fall back to individual creation
+      console.warn('Batch creation failed, falling back to individual creation:', error);
+      return await this.executeToolCalls(allToolCalls, userId, selectedShapes);
+    }
+  }
+  
+  private async createMultipleShapes(args: any, userId: string) {
+    const { 
+      count, 
+      shapeType, 
+      startX, 
+      startY, 
+      gridColumns, 
+      spacing, 
+      shapeWidth, 
+      shapeHeight, 
+      colors,
+      layout = 'grid',
+      alignment = 'default'
+    } = args;
+    
+    console.log(`🤖 AI creating ${count} ${shapeType} shapes at (${startX}, ${startY}) with ${colors.length} colors, layout: ${layout}, alignment: ${alignment}`);
+    
+    // Calculate positions based on layout type
+    const shapesData = [];
+    const canvasWidth = 5000;
+    const canvasHeight = 5000;
+    
+    // Calculate cell dimensions to ensure no overlap
+    const cellWidth = shapeWidth + spacing;
+    const cellHeight = shapeHeight + spacing;
+    
+    // Determine effective grid columns based on layout
+    let effectiveGridColumns = gridColumns;
+    if (layout === 'horizontal-row') {
+      effectiveGridColumns = count; // All shapes in one row
+    } else if (layout === 'vertical-row') {
+      effectiveGridColumns = 1; // All shapes in one column
+    }
+    
+    for (let i = 0; i < count; i++) {
+      const row = Math.floor(i / effectiveGridColumns);
+      const col = i % effectiveGridColumns;
+      
+      let x, y;
+      
+      if (layout === 'horizontal-row') {
+        // All shapes in a single horizontal row
+        x = startX + (i * (shapeWidth + spacing));
+        // Middle-align vertically
+        if (alignment === 'middle' || alignment === 'both') {
+          y = startY - shapeHeight / 2; // Center the shapes vertically
+        } else {
+          y = startY;
+        }
+      } else if (layout === 'vertical-row') {
+        // All shapes in a single vertical column
+        if (alignment === 'center' || alignment === 'both') {
+          x = startX - shapeWidth / 2; // Center the shapes horizontally
+        } else {
+          x = startX;
+        }
+        y = startY + (i * (shapeHeight + spacing));
+      } else {
+        // Grid layout (default behavior)
+        x = startX + (col * cellWidth);
+        y = startY + (row * cellHeight);
+        
+        // Apply alignment for grid layout
+        if (alignment === 'middle' || alignment === 'both') {
+          // Calculate middle Y position for the entire grid
+          const totalRows = Math.ceil(count / effectiveGridColumns);
+          const gridHeight = (totalRows - 1) * cellHeight + shapeHeight;
+          const middleY = startY + gridHeight / 2;
+          y = middleY - shapeHeight / 2;
+        }
+        if (alignment === 'center' || alignment === 'both') {
+          // Calculate center X position for the entire grid
+          const totalCols = Math.min(effectiveGridColumns, count);
+          const gridWidth = (totalCols - 1) * cellWidth + shapeWidth;
+          const centerX = startX + gridWidth / 2;
+          x = centerX - shapeWidth / 2 + (col * cellWidth);
+        }
+      }
+      
+      // Debug first few shapes to see positioning
+      if (i < 5) {
+        console.log(`🔍 Shape ${i}: layout=${layout}, alignment=${alignment}, x=${x}, y=${y}, row=${row}, col=${col}`);
+      }
+      
+      // Check bounds to ensure shapes stay within canvas
+      const maxX = x + shapeWidth;
+      const maxY = y + shapeHeight;
+      
+      if (maxX > canvasWidth || maxY > canvasHeight) {
+        console.warn(`⚠️ Shape ${i} would be outside canvas bounds: (${x}, ${y}) to (${maxX}, ${maxY})`);
+        // Skip this shape to avoid bounds errors
+        continue;
+      }
+      
+      const color = colors[i % colors.length];
+      
+      const shapeData: any = {
+        type: shapeType,
+        x,
+        y,
+        width: shapeWidth,
+        height: shapeHeight,
+        color,
+        rotation: 0,
+        createdBy: userId
+      };
+      
+      // Add radius for circles
+      if (shapeType === 'circle') {
+        shapeData.radius = shapeWidth / 2;
+      }
+      
+      shapesData.push(shapeData);
+    }
+    
+    console.log(`🤖 AI prepared ${shapesData.length} ${shapeType} shapes for batch creation (${count - shapesData.length} skipped due to bounds)`);
+    
+    // Create all shapes in a single batch operation
+    const result = await this.canvasService.createShapesBatch(shapesData);
+    console.log(`🤖 AI successfully created ${result.length} ${shapeType} shapes`);
+    return result;
+  }
+  
+  /**
+   * Create random shapes directly without relying on AI tool calls
+   */
+  private async createRandomShapesDirectly(countPerType: number, userId: string): Promise<any[]> {
+    console.log(`🎲 Creating ${countPerType} random shapes of each type directly`);
+    
+    const results = [];
+    
+    try {
+      // Create rectangles - Top-left area with balanced spacing
+      console.log(`🎲 Step 1: Creating ${countPerType} rectangles...`);
+      const rectangleArgs = {
+        count: countPerType,
+        shapeType: 'rectangle',
+        startX: 100,
+        startY: 100,
+        gridColumns: 10, // 10 columns for better density
+        spacing: 20, // Proper spacing to prevent overlap
+        shapeWidth: 80, // Good size for visibility
+        shapeHeight: 60,
+        colors: ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899']
+      };
+      
+      const rectangles = await this.createMultipleShapes(rectangleArgs, userId);
+      console.log(`🎲 Step 1 Complete: Created ${rectangles.length} rectangles`);
+      results.push({
+        tool: 'createMultipleShapes',
+        success: true,
+        result: rectangles
+      });
+      
+      // Create circles - Top-right area with balanced spacing
+      console.log(`🎲 Step 2: Creating ${countPerType} circles...`);
+      const circleArgs = {
+        count: countPerType,
+        shapeType: 'circle',
+        startX: 2000, // Adjusted position for better balance
+        startY: 100,
+        gridColumns: 10, // 10 columns for better density
+        spacing: 20, // Proper spacing to prevent overlap
+        shapeWidth: 80, // Good size for visibility
+        shapeHeight: 60,
+        colors: ['#ef4444', '#f59e0b', '#84cc16', '#06b6d4', '#8b5cf6']
+      };
+      
+      const circles = await this.createMultipleShapes(circleArgs, userId);
+      console.log(`🎲 Step 2 Complete: Created ${circles.length} circles`);
+      results.push({
+        tool: 'createMultipleShapes',
+        success: true,
+        result: circles
+      });
+      
+      // Create triangles - Bottom area with balanced spacing
+      console.log(`🎲 Step 3: Creating ${countPerType} triangles...`);
+      const triangleArgs = {
+        count: countPerType,
+        shapeType: 'triangle',
+        startX: 100,
+        startY: 2000, // Adjusted position for better balance
+        gridColumns: 10, // 10 columns for better density
+        spacing: 20, // Proper spacing to prevent overlap
+        shapeWidth: 80, // Good size for visibility
+        shapeHeight: 60,
+        colors: ['#22c55e', '#6366f1', '#ec4899', '#f97316', '#3b82f6']
+      };
+      
+      const triangles = await this.createMultipleShapes(triangleArgs, userId);
+      console.log(`🎲 Step 3 Complete: Created ${triangles.length} triangles`);
+      results.push({
+        tool: 'createMultipleShapes',
+        success: true,
+        result: triangles
+      });
+      
+      console.log(`🎲 Successfully created ${countPerType} rectangles, ${countPerType} circles, and ${countPerType} triangles`);
+      
+    } catch (error) {
+      console.error('❌ Error creating random shapes directly:', error);
+      throw error;
+    }
+    
+    return results;
+  }
+  
+  private async executeSingleTool(call: any, userId: string, selectedShapes?: string[]) {
     const { name, arguments: argsStr } = call.function;
     logger.debug(LogCategory.AI, `Parsing tool call: ${name} with args: ${argsStr}`);
     const args = JSON.parse(argsStr);
     logger.debug(LogCategory.AI, `Parsed args: ${JSON.stringify(args)}`);
     
     switch (name) {
+      case 'createMultipleShapes':
+        return await this.createMultipleShapes(args, userId);
+        
       case 'createRectangle':
         return await this.canvasService.createShape({
           type: 'rectangle',
@@ -218,8 +1143,8 @@ export class AIService {
       // NEW MANIPULATION TOOLS
       case 'moveShape':
         // Get the current shape to determine its type and dimensions
-        const shapes = await this.canvasService.getShapes();
-        const targetShape = shapes.find(s => s.id === args.shapeId);
+        const moveShapes = await this.canvasService.getShapes();
+        const targetShape = moveShapes.find(s => s.id === args.shapeId);
         
         if (!targetShape) {
           throw new Error(`Shape with ID ${args.shapeId} not found`);
@@ -264,21 +1189,298 @@ export class AIService {
       case 'duplicateShape':
         return await this.canvasService.duplicateShape(args.shapeId, userId);
         
+      case 'duplicateMultipleShapes':
+        console.log(`📋 [AI] duplicateMultipleShapes called with ${args.shapeIds.length} shapes:`, args.shapeIds);
+        return await this.duplicateMultipleShapes(args.shapeIds, userId);
+        
+      case 'duplicateSelectedShapes':
+        // Use the selectedShapes from the context instead of requiring shapeIds
+        if (!selectedShapes || selectedShapes.length === 0) {
+          throw new Error('No shapes are currently selected');
+        }
+        console.log(`📋 [AI] duplicateSelectedShapes called with ${selectedShapes.length} selected shapes:`, selectedShapes);
+        return await this.duplicateMultipleShapes(selectedShapes, userId);
+        
       case 'deleteShape':
         return await this.canvasService.deleteShape(args.shapeId);
         
+      case 'deleteMultipleShapes':
+        console.log(`🗑️ [AI] deleteMultipleShapes called with ${args.shapeIds.length} shapes:`, args.shapeIds);
+        return await this.deleteMultipleShapes(args.shapeIds);
+        
+      case 'deleteSelectedShapes':
+        // Use the selectedShapes from the context instead of requiring shapeIds
+        if (!selectedShapes || selectedShapes.length === 0) {
+          throw new Error('No shapes are currently selected');
+        }
+        console.log(`🗑️ [AI] deleteSelectedShapes called with ${selectedShapes.length} selected shapes:`, selectedShapes);
+        return await this.deleteMultipleShapes(selectedShapes);
+        
+      case 'changeColor':
+        return await this.canvasService.updateShape(args.shapeId, {
+          color: args.color
+        });
+        
+      case 'changeMultipleColors':
+        console.log(`🎨 [AI] changeMultipleColors called with ${args.shapeIds.length} shapes:`, args.shapeIds);
+        return await this.changeMultipleColors(args.shapeIds, args.color);
+        
+      case 'changeSelectedShapesColor':
+        // Use the selectedShapes from the context instead of requiring shapeIds
+        if (!selectedShapes || selectedShapes.length === 0) {
+          throw new Error('No shapes are currently selected');
+        }
+        console.log(`🎨 [AI] changeSelectedShapesColor called with ${selectedShapes.length} selected shapes:`, selectedShapes);
+        return await this.changeMultipleColors(selectedShapes, args.color);
+        
       case 'getCanvasState':
-        return await this.canvasService.getShapes();
+        const canvasShapes = await this.canvasService.getShapes();
+        const canvasGroups = await this.canvasService.getGroups();
+        return { shapes: canvasShapes, groups: canvasGroups };
+        
+      case 'getSelectedShapes':
+        // This would need to be passed from the Canvas component
+        // For now, return empty array - this needs to be implemented
+        return { selectedShapes: [] };
+        
+      // NEW LAYOUT TOOLS
+      case 'groupShapes':
+        return await this.canvasService.groupShapes(args.shapeIds, userId, args.name);
+        
+      case 'ungroupShapes':
+        return await this.canvasService.ungroupShapes(args.groupId);
+        
+      case 'alignShapes':
+        return await this.alignShapes(args.shapeIds, args.alignment);
+        
+      case 'arrangeShapesInRow':
+        return await this.arrangeShapesInRow(args.shapeIds, args.spacing);
+        
+      case 'spaceShapesEvenly':
+        return await this.spaceShapesEvenly(args.shapeIds, args.direction);
+        
+      case 'bringToFront':
+        return await this.canvasService.bringToFront(args.shapeId);
+        
+      case 'sendToBack':
+        return await this.canvasService.sendToBack(args.shapeId);
         
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
   }
   
+  /**
+   * Align multiple shapes to a common edge or center
+   * @param shapeIds - Array of shape IDs to align
+   * @param alignment - Alignment type: 'left', 'center', 'right', 'top', 'middle', 'bottom'
+   */
+  private async alignShapes(shapeIds: string[], alignment: string): Promise<void> {
+    try {
+      // Validate input
+      if (!shapeIds || shapeIds.length < 2) {
+        throw new Error('At least 2 shapes are required for alignment');
+      }
+
+      // Get all shapes
+      const shapes = await this.canvasService.getShapes();
+      const targetShapes = shapes.filter(shape => shapeIds.includes(shape.id));
+      
+      if (targetShapes.length !== shapeIds.length) {
+        throw new Error('One or more shapes not found');
+      }
+
+      // Calculate alignment positions
+      const positions = calculateAlignment(shapeIds, shapes, alignment);
+      
+      // Update shapes with batch operation
+      await this.canvasService.updateShapePositions(positions);
+    } catch (error) {
+      console.error('❌ Error aligning shapes:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Arrange shapes in a horizontal row with equal spacing
+   * @param shapeIds - Array of shape IDs to arrange
+   * @param spacing - Spacing between shapes (default 20px)
+   */
+  private async arrangeShapesInRow(shapeIds: string[], spacing: number = 20): Promise<void> {
+    try {
+      // Validate input
+      if (!shapeIds || shapeIds.length < 2) {
+        throw new Error('At least 2 shapes are required for row arrangement');
+      }
+
+      // Get all shapes
+      const shapes = await this.canvasService.getShapes();
+      const targetShapes = shapes.filter(shape => shapeIds.includes(shape.id));
+      
+      if (targetShapes.length !== shapeIds.length) {
+        throw new Error('One or more shapes not found');
+      }
+
+      // Calculate row layout positions
+      const positions = calculateRowLayout(shapeIds, shapes, spacing);
+      
+      // Update shapes with batch operation
+      await this.canvasService.updateShapePositions(positions);
+    } catch (error) {
+      console.error('❌ Error arranging shapes in row:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Space shapes evenly in a specified direction
+   * @param shapeIds - Array of shape IDs to space
+   * @param direction - Direction of spacing: 'horizontal' or 'vertical'
+   */
+  private async spaceShapesEvenly(shapeIds: string[], direction: 'horizontal' | 'vertical'): Promise<void> {
+    try {
+      // Validate input
+      if (!shapeIds || shapeIds.length < 2) {
+        throw new Error('At least 2 shapes are required for even spacing');
+      }
+
+      // Get all shapes
+      const shapes = await this.canvasService.getShapes();
+      const targetShapes = shapes.filter(shape => shapeIds.includes(shape.id));
+      
+      if (targetShapes.length !== shapeIds.length) {
+        throw new Error('One or more shapes not found');
+      }
+
+      // Calculate even spacing positions
+      const positions = calculateEvenSpacing(shapeIds, shapes, direction);
+      
+      // Update shapes with batch operation
+      await this.canvasService.updateShapePositions(positions);
+    } catch (error) {
+      console.error('❌ Error spacing shapes evenly:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Change color of multiple shapes at once
+   * @param shapeIds - Array of shape IDs to change color
+   * @param color - New color to apply
+   */
+  private async changeMultipleColors(shapeIds: string[], color: string): Promise<void> {
+    try {
+      console.log(`🎨 Changing colors for ${shapeIds.length} shapes:`, shapeIds);
+      
+      // Update each shape's color individually with error handling
+      const updatePromises = shapeIds.map(async (shapeId, index) => {
+        try {
+          console.log(`🎨 Updating shape ${index + 1}/${shapeIds.length}: ${shapeId} to ${color}`);
+          await this.canvasService.updateShape(shapeId, { color });
+          console.log(`✅ Successfully updated shape: ${shapeId}`);
+        } catch (shapeError) {
+          console.error(`❌ Failed to update shape ${shapeId}:`, shapeError);
+          throw shapeError;
+        }
+      });
+      
+      await Promise.all(updatePromises);
+      console.log(`🎨 Successfully changed colors for all ${shapeIds.length} shapes`);
+    } catch (error) {
+      console.error('❌ Error changing multiple colors:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Delete multiple shapes at once
+   * @param shapeIds - Array of shape IDs to delete
+   */
+  private async deleteMultipleShapes(shapeIds: string[]): Promise<void> {
+    try {
+      console.log(`🗑️ Deleting ${shapeIds.length} shapes:`, shapeIds);
+      
+      // Delete each shape individually with error handling
+      const deletePromises = shapeIds.map(async (shapeId, index) => {
+        try {
+          console.log(`🗑️ Deleting shape ${index + 1}/${shapeIds.length}: ${shapeId}`);
+          await this.canvasService.deleteShape(shapeId);
+          console.log(`✅ Successfully deleted shape: ${shapeId}`);
+        } catch (shapeError) {
+          console.error(`❌ Failed to delete shape ${shapeId}:`, shapeError);
+          throw shapeError;
+        }
+      });
+      
+      await Promise.all(deletePromises);
+      console.log(`🗑️ Successfully deleted all ${shapeIds.length} shapes`);
+    } catch (error) {
+      console.error('❌ Error deleting multiple shapes:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Duplicate multiple shapes at once
+   * @param shapeIds - Array of shape IDs to duplicate
+   * @param userId - User ID for the duplication
+   */
+  private async duplicateMultipleShapes(shapeIds: string[], userId: string): Promise<void> {
+    try {
+      console.log(`📋 Duplicating ${shapeIds.length} shapes:`, shapeIds);
+      
+      // Get the original shapes to find their positions for selection
+      const originalShapes = await this.canvasService.getShapes();
+      
+      // Duplicate each shape individually with error handling
+      const duplicatePromises = shapeIds.map(async (shapeId, index) => {
+        try {
+          console.log(`📋 Duplicating shape ${index + 1}/${shapeIds.length}: ${shapeId}`);
+          await this.canvasService.duplicateShape(shapeId, userId);
+          console.log(`✅ Successfully duplicated shape: ${shapeId}`);
+        } catch (shapeError) {
+          console.error(`❌ Failed to duplicate shape ${shapeId}:`, shapeError);
+          throw shapeError;
+        }
+      });
+      
+      await Promise.all(duplicatePromises);
+      console.log(`📋 Successfully duplicated all ${shapeIds.length} shapes`);
+      
+      // After duplication, get the new shapes and select them
+      // We'll need to find the newly created shapes by comparing with original shapes
+      setTimeout(async () => {
+        try {
+          const newShapes = await this.canvasService.getShapes();
+          const newShapeIds = newShapes
+            .filter(shape => !originalShapes.some(original => original.id === shape.id))
+            .map(shape => shape.id);
+          
+          if (newShapeIds.length > 0) {
+            console.log(`📋 Selecting ${newShapeIds.length} newly duplicated shapes:`, newShapeIds);
+            // Use the callback to update selection in the Canvas component
+            if (this.onSelectionUpdate) {
+              this.onSelectionUpdate(newShapeIds);
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error selecting duplicated shapes:', error);
+        }
+      }, 100); // Small delay to ensure shapes are created
+      
+    } catch (error) {
+      console.error('❌ Error duplicating multiple shapes:', error);
+      throw error;
+    }
+  }
+  
   private isObjectModificationTool(toolName: string): boolean {
     // Check if the tool modifies objects (not just getCanvasState)
     return ['createRectangle', 'createCircle', 'createTriangle', 'createText', 
-            'moveShape', 'resizeShape', 'rotateShape', 'duplicateShape', 'deleteShape'].includes(toolName);
+            'moveShape', 'resizeShape', 'rotateShape', 'duplicateShape', 'duplicateMultipleShapes', 'duplicateSelectedShapes',
+            'deleteShape', 'deleteMultipleShapes', 'deleteSelectedShapes',
+            'changeColor', 'changeMultipleColors', 'changeSelectedShapesColor',
+            'groupShapes', 'ungroupShapes', 'alignShapes', 'arrangeShapesInRow', 'spaceShapesEvenly', 'bringToFront', 'sendToBack'].includes(toolName);
   }
   
   private getActionName(toolName: string): string {
@@ -291,7 +1493,21 @@ export class AIService {
       'resizeShape': 'resize shape',
       'rotateShape': 'rotate shape',
       'duplicateShape': 'duplicate shape',
-      'deleteShape': 'delete shape'
+      'duplicateMultipleShapes': 'duplicate multiple shapes',
+      'duplicateSelectedShapes': 'duplicate selected shapes',
+      'deleteShape': 'delete shape',
+      'deleteMultipleShapes': 'delete multiple shapes',
+      'deleteSelectedShapes': 'delete selected shapes',
+      'changeColor': 'change color',
+      'changeMultipleColors': 'change colors',
+      'changeSelectedShapesColor': 'change selected shapes color',
+      'groupShapes': 'group shapes',
+      'ungroupShapes': 'ungroup shapes',
+      'alignShapes': 'align shapes',
+      'arrangeShapesInRow': 'arrange shapes in row',
+      'spaceShapesEvenly': 'space shapes evenly',
+      'bringToFront': 'bring to front',
+      'sendToBack': 'send to back'
     };
     return actionMap[toolName] || 'perform action';
   }
@@ -316,6 +1532,23 @@ export class AIService {
     
     const toolNames = results.map(r => r.tool);
     
+    // Check for createMultipleShapes operations
+    const multipleShapesCalls = results.filter(r => r.tool === 'createMultipleShapes' && r.success);
+    if (multipleShapesCalls.length > 0) {
+      const totalShapes = multipleShapesCalls.reduce((sum, call) => {
+        const result = call.result;
+        return sum + (Array.isArray(result) ? result.length : 0);
+      }, 0);
+      
+      if (multipleShapesCalls.length === 3) {
+        return `✓ Created ${totalShapes} random shapes (rectangles, circles, and triangles)`;
+      } else if (multipleShapesCalls.length > 1) {
+        return `✓ Created ${totalShapes} shapes in ${multipleShapesCalls.length} batches`;
+      } else {
+        return `✓ Created ${totalShapes} shapes`;
+      }
+    }
+    
     // Single tool messages
     if (toolNames.length === 1) {
       const tool = toolNames[0];
@@ -329,6 +1562,13 @@ export class AIService {
         case 'rotateShape': return '✓ Rotated shape';
         case 'duplicateShape': return '✓ Duplicated shape';
         case 'deleteShape': return '✓ Deleted shape';
+        case 'groupShapes': return '✓ Grouped shapes';
+        case 'ungroupShapes': return '✓ Ungrouped shapes';
+        case 'alignShapes': return '✓ Aligned shapes';
+        case 'arrangeShapesInRow': return '✓ Arranged shapes in row';
+        case 'spaceShapesEvenly': return '✓ Spaced shapes evenly';
+        case 'bringToFront': return '✓ Brought shape to front';
+        case 'sendToBack': return '✓ Sent shape to back';
         case 'getCanvasState': return '✓ Retrieved canvas state';
         default: return '✓ Action completed';
       }
@@ -348,6 +1588,40 @@ export class AIService {
   
   private getToolDefinitions() {
     return [
+      {
+        type: "function" as const,
+        function: {
+          name: "createMultipleShapes",
+          description: "Creates multiple shapes efficiently in a single operation. Use this for creating 5+ shapes at once.",
+          parameters: {
+            type: "object",
+            properties: {
+              count: { type: "number", description: "Number of shapes to create" },
+              shapeType: { type: "string", enum: ["rectangle", "circle", "triangle"], description: "Type of shapes to create" },
+              startX: { type: "number", description: "Starting X position for grid layout" },
+              startY: { type: "number", description: "Starting Y position for grid layout" },
+              gridColumns: { type: "number", description: "Number of columns in grid layout" },
+              spacing: { type: "number", description: "Spacing between shapes in pixels" },
+              shapeWidth: { type: "number", description: "Width of each shape" },
+              shapeHeight: { type: "number", description: "Height of each shape" },
+              colors: { type: "array", items: { type: "string" }, description: "Array of colors to use (will cycle through)" },
+              layout: { 
+                type: "string", 
+                enum: ["grid", "horizontal-row", "vertical-row"], 
+                description: "Layout type: 'grid' (multi-row), 'horizontal-row' (single row), 'vertical-row' (single column)",
+                default: "grid"
+              },
+              alignment: { 
+                type: "string", 
+                enum: ["default", "middle", "center", "both"], 
+                description: "Shape alignment: 'default' (no special alignment), 'middle' (vertical center), 'center' (horizontal center), 'both' (full center alignment)",
+                default: "default"
+              }
+            },
+            required: ["count", "shapeType", "startX", "startY", "gridColumns", "spacing", "shapeWidth", "shapeHeight", "colors"]
+          }
+        }
+      },
       {
         type: "function" as const,
         function: {
@@ -507,6 +1781,214 @@ export class AIService {
             type: "object",
             properties: {
               shapeId: { type: "string", description: "ID of the shape to delete" }
+            },
+            required: ["shapeId"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "changeColor",
+          description: "Changes the color of an existing shape. MUST call getCanvasState first to find the shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to change color" },
+              color: { type: "string", description: "New hex color code like #ff0000" }
+            },
+            required: ["shapeId", "color"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "changeMultipleColors",
+          description: "Changes the color of multiple shapes at once. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to change color" },
+              color: { type: "string", description: "New hex color code like #ff0000" }
+            },
+            required: ["shapeIds", "color"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "changeSelectedShapesColor",
+          description: "Changes the color of all currently selected shapes. Use this when user says 'change to [color]' or 'make them [color]' with shapes selected.",
+          parameters: {
+            type: "object",
+            properties: {
+              color: { type: "string", description: "New hex color code like #ff0000" }
+            },
+            required: ["color"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "deleteMultipleShapes",
+          description: "Deletes multiple shapes at once. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to delete" }
+            },
+            required: ["shapeIds"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "deleteSelectedShapes",
+          description: "Deletes all currently selected shapes. Use this when user says 'delete' or 'remove' with shapes selected.",
+          parameters: {
+            type: "object",
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "duplicateMultipleShapes",
+          description: "Duplicates multiple shapes at once. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to duplicate" }
+            },
+            required: ["shapeIds"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "duplicateSelectedShapes",
+          description: "Duplicates all currently selected shapes. Use this when user says 'duplicate' with shapes selected.",
+          parameters: {
+            type: "object",
+            properties: {},
+            required: []
+          }
+        }
+      },
+      
+      // NEW LAYOUT TOOLS
+      {
+        type: "function" as const,
+        function: {
+          name: "groupShapes",
+          description: "Groups multiple shapes together for collective operations. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to group" },
+              name: { type: "string", description: "Optional group name" }
+            },
+            required: ["shapeIds"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "ungroupShapes",
+          description: "Ungroups shapes by removing them from their group. MUST call getCanvasState first to find groupId.",
+          parameters: {
+            type: "object",
+            properties: {
+              groupId: { type: "string", description: "ID of the group to ungroup" }
+            },
+            required: ["groupId"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "alignShapes",
+          description: "Aligns multiple shapes to a common edge or center. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to align" },
+              alignment: { 
+                type: "string", 
+                enum: ["left", "center", "right", "top", "middle", "bottom"],
+                description: "Alignment type: left, center, right, top, middle, bottom"
+              }
+            },
+            required: ["shapeIds", "alignment"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "arrangeShapesInRow",
+          description: "Arranges selected shapes in a horizontal row with equal spacing. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to arrange" },
+              spacing: { type: "number", description: "Spacing between shapes in pixels (default 20)" }
+            },
+            required: ["shapeIds"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "spaceShapesEvenly",
+          description: "Spaces selected shapes evenly in a specified direction. MUST call getCanvasState first to find shapeIds.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeIds: { type: "array", items: { type: "string" }, description: "Array of shape IDs to space" },
+              direction: { 
+                type: "string", 
+                enum: ["horizontal", "vertical"],
+                description: "Direction of spacing: horizontal or vertical"
+              }
+            },
+            required: ["shapeIds", "direction"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "bringToFront",
+          description: "Brings a shape to the front (highest z-index). MUST call getCanvasState first to find shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to bring to front" }
+            },
+            required: ["shapeId"]
+          }
+        }
+      },
+      {
+        type: "function" as const,
+        function: {
+          name: "sendToBack",
+          description: "Sends a shape to the back (lowest z-index). MUST call getCanvasState first to find shapeId.",
+          parameters: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string", description: "ID of the shape to send to back" }
             },
             required: ["shapeId"]
           }

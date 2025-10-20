@@ -1,12 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Navbar from './Navbar';
 import LeftToolbar from './LeftToolbar';
+import AIChat from '../AI/AIChat';
 
 interface AppShellProps {
   children: React.ReactNode;
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  const handleToggleChat = () => {
+    setIsChatOpen(!isChatOpen);
+  };
+
   return (
     <div className="app-shell">
       <Navbar />
@@ -18,6 +25,12 @@ export function AppShell({ children }: AppShellProps) {
           {children}
         </main>
       </div>
+      
+      {/* AI Chat - Right side floating panel */}
+      <AIChat 
+        isOpen={isChatOpen}
+        onToggle={handleToggleChat}
+      />
     </div>
   );
 }

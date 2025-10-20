@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { OnlineUser } from '../../hooks/usePresence';
+import { deduplicateUsers } from '../../hooks/usePresence';
 
 interface TeamIconsProps {
   onlineUsers: OnlineUser[];
@@ -10,14 +11,17 @@ interface TeamIconsProps {
 export function TeamIcons({ onlineUsers, currentUser, totalOnlineCount }: TeamIconsProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   
-  // Combine current user with other users
+  // Combine current user with other users, ensuring no duplicates
   const allUsers = currentUser 
     ? [currentUser, ...onlineUsers.filter(user => user.userId !== currentUser.userId)]
     : onlineUsers;
   
+  // Additional deduplication to prevent duplicate keys
+  const uniqueUsers = deduplicateUsers(allUsers);
+  
   // Show first 5 users, rest in dropdown
-  const visibleUsers = allUsers.slice(0, 5);
-  const hiddenUsers = allUsers.slice(5);
+  const visibleUsers = uniqueUsers.slice(0, 5);
+  const hiddenUsers = uniqueUsers.slice(5);
   
   const handleIconClick = () => {
     setShowDropdown(!showDropdown);
@@ -64,7 +68,7 @@ export function TeamIcons({ onlineUsers, currentUser, totalOnlineCount }: TeamIc
             </button>
           </div>
           <div className="team-dropdown-list">
-            {allUsers.map((user) => (
+            {uniqueUsers.map((user) => (
               <div key={user.userId} className="team-dropdown-item">
                 <div
                   className="team-dropdown-icon"
