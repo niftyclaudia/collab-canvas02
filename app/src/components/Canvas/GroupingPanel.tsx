@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
-import { canvasService, Shape } from '../../services/canvasService';
+import { canvasService, type Shape } from '../../services/canvasService';
 
 interface GroupingPanelProps {
   selectedShapes: Shape[];
